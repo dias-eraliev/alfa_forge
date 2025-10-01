@@ -1101,7 +1101,7 @@ class _PositioningOverlayState extends State<_PositioningOverlay>
                   Container(
                     width: 8,
                     height: 8,
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       color: Colors.white,
                       shape: BoxShape.circle,
                     ),

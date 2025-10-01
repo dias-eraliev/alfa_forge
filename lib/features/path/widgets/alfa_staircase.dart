@@ -82,7 +82,7 @@ class PRIMEStaircase extends ConsumerWidget {
   Widget _buildCurrentZoneInfo(Map<String, dynamic> stairData) {
     final currentZone = stairData['current_zone'] as String;
     final currentStep = stairData['character_position'] as int;
-    final totalSteps = 600;
+    const totalSteps = 600;
     
     return Container(
       width: double.infinity,
@@ -128,10 +128,10 @@ class PRIMEStaircase extends ConsumerWidget {
   /// Главная лестница - минималистичный дизайн
   Widget _buildStaircase(BuildContext context, Map<String, dynamic> stairData) {
     final characterPosition = stairData['character_position'] as int;
-    final totalSteps = 600;
+    const totalSteps = 600;
     
     // Показываем последние 20 шагов для лучшей видимости
-    final visibleSteps = 20;
+    const visibleSteps = 20;
     final startStep = (characterPosition - visibleSteps ~/ 2).clamp(0, totalSteps - visibleSteps);
     
     return Container(

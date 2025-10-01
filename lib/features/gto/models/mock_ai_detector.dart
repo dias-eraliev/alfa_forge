@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math';
 import 'exercise_model.dart';
-import 'workout_session_model.dart';
 
 class MockAIDetector {
   final String exerciseType;

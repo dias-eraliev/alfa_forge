@@ -135,10 +135,10 @@ class _GTOPageState extends ConsumerState<GTOPage> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: PRIMETheme.line),
                 ),
-                child: Column(
+                child: const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Готов к Труду и Обороне',
                       style: TextStyle(
                         color: PRIMETheme.sand,
@@ -146,8 +146,8 @@ class _GTOPageState extends ConsumerState<GTOPage> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
+                    SizedBox(height: 8),
+                    Text(
                       'ГТО - это всероссийский физкультурно-спортивный комплекс. Здесь вы можете посмотреть нормативы для вашего возраста и пола.',
                       style: TextStyle(
                         color: PRIMETheme.sandWeak,
@@ -230,7 +230,7 @@ class _GTOPageState extends ConsumerState<GTOPage> {
                 ),
               ),
               const SizedBox(height: 8),
-              Container(
+              SizedBox(
                 height: 50,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,

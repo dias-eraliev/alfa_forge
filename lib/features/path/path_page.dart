@@ -803,7 +803,7 @@ class _HabitModalState extends State<_HabitModal> {
           const SizedBox(height: 8),
           
           DropdownButtonFormField<String>(
-            value: _frequency,
+            initialValue: _frequency,
             dropdownColor: Theme.of(context).cardColor,
             style: const TextStyle(color: PRIMETheme.sand),
             decoration: InputDecoration(
@@ -951,7 +951,7 @@ class _TaskModalState extends State<_TaskModal> {
           const SizedBox(height: 8),
           
           DropdownButtonFormField<String>(
-            value: _priority,
+            initialValue: _priority,
             dropdownColor: Theme.of(context).cardColor,
             style: const TextStyle(color: PRIMETheme.sand),
             decoration: InputDecoration(

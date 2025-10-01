@@ -49,7 +49,7 @@ class TTSState {
 
 class TTSController extends StateNotifier<TTSState> {
   late FlutterTts _flutterTts;
-  List<String> _speechQueue = [];
+  final List<String> _speechQueue = [];
   bool _isProcessingQueue = false;
 
   TTSController() : super(const TTSState()) {

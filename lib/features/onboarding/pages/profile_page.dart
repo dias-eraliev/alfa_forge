@@ -373,7 +373,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
 
   Widget _buildCityDropdown(bool isSmallScreen) {
     return DropdownButtonFormField<String>(
-      value: _selectedCity,
+      initialValue: _selectedCity,
       decoration: InputDecoration(
         labelText: 'Город',
         hintText: 'Выберите ваш город',

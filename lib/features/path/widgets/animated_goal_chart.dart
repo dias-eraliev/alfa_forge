@@ -97,7 +97,7 @@ class _AnimatedGoalChartState extends State<AnimatedGoalChart>
 
   Widget _buildEmptyState() {
     return Container(
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -143,7 +143,7 @@ class _AnimatedGoalChartState extends State<AnimatedGoalChart>
       builder: (context, child) {
         return Container(
           padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -260,7 +260,7 @@ class _AnimatedGoalChartState extends State<AnimatedGoalChart>
           belowBarData: BarAreaData(show: false),
         ),
       ],
-      lineTouchData: LineTouchData(enabled: false),
+      lineTouchData: const LineTouchData(enabled: false),
     );
   }
 

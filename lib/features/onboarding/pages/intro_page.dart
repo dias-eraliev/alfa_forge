@@ -124,7 +124,7 @@ class _IntroPageState extends State<IntroPage> {
           foregroundColor: isPrimary ? PRIMETheme.sand : PRIMETheme.primary,
           side: isPrimary 
               ? null 
-              : BorderSide(
+              : const BorderSide(
                   color: PRIMETheme.primary, 
                   width: 2,
                 ),

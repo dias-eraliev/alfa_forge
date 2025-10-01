@@ -280,7 +280,7 @@ class WorkoutResultsPage extends StatelessWidget {
   String _formatDuration(Duration duration) {
     final minutes = duration.inMinutes;
     final seconds = duration.inSeconds % 60;
-    return '${minutes}м ${seconds}с';
+    return '$minutesм $secondsс';
   }
 }
 
