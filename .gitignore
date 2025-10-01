@@ -70,3 +70,4 @@ ios/Runner.xcworkspace/xcshareddata/
 web/
 # Other
 *.log
+.env

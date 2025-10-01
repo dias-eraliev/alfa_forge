@@ -39,6 +39,10 @@ dependencies:
   shared_preferences: ^2.2.2
   cupertino_icons: ^1.0.8
   
+  # =============== БЭКЕНД И АУТЕНТИФИКАЦИЯ ===============
+  supabase_flutter: ^2.0.0
+  flutter_dotenv: ^5.1.0
+  
   # =============== 3D И ИГРОВОЙ ДВИЖОК ===============
   flame: ^1.18.0
   flame_forge2d: ^0.16.0+2
