@@ -136,8 +136,9 @@ class UserProgress extends HiveObject {
   /// Обновить текущую зону
   void _updateCurrentZone() {
     final progress = getOverallProgress();
-    if (progress < 0.17) currentZone = 'ТЕЛО';
-    else if (progress < 0.34) currentZone = 'ВОЛЯ';
+    if (progress < 0.17) {
+      currentZone = 'ТЕЛО';
+    } else if (progress < 0.34) currentZone = 'ВОЛЯ';
     else if (progress < 0.51) currentZone = 'ФОКУС';
     else if (progress < 0.68) currentZone = 'РАЗУМ';
     else if (progress < 0.85) currentZone = 'СПОКОЙСТВИЕ';

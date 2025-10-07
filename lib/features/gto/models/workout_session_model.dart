@@ -57,11 +57,11 @@ class WorkoutSession {
     final seconds = duration.inSeconds % 60;
     
     if (hours > 0) {
-      return '${hours}ч ${minutes}м ${seconds}с';
+      return '$hoursч $minutesм $secondsс';
     } else if (minutes > 0) {
-      return '${minutes}м ${seconds}с';
+      return '$minutesм $secondsс';
     } else {
-      return '${seconds}с';
+      return '$secondsс';
     }
   }
 

@@ -43,7 +43,16 @@
 	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
-	<key>UIApplicationSupportsIndirectInputEvents</key>
-	<true/>
+<key>UIApplicationSupportsIndirectInputEvents</key>
+<true/>
+<key>UIBackgroundModes</key>
+<array>
+<string>background-processing</string>
+<string>background-fetch</string>
+</array>
+<key>NSUserNotificationUsageDescription</key>
+<string>Это приложение использует уведомления для отправки мотивационных цитат, которые помогут вам достигать ваших целей каждый день.</string>
+<key>NSUserNotificationAlertStyle</key>
+<string>alert</string>
 </dict>
 </plist>

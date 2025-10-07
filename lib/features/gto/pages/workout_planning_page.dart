@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../app/theme.dart';
 import '../models/exercise_model.dart';
 import '../controllers/workout_controller.dart';
@@ -272,12 +273,7 @@ class _WorkoutPlanningPageState extends ConsumerState<WorkoutPlanningPage> {
 
       // Переходим на страницу AI-Motion
       if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const AIMotionPage(),
-          ),
-        );
+        context.go('/gto/ai-motion');
       }
     } catch (e) {
       if (mounted) {

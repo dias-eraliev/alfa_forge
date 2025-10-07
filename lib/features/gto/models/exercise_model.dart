@@ -2,6 +2,8 @@ class ExerciseType {
   static const String pushups = 'pushups';
   static const String squats = 'squats';
   static const String burpees = 'burpees';
+  static const String plank = 'plank';
+  static const String jumpingJacks = 'jumping_jacks';
 }
 
 class Exercise {
@@ -24,6 +26,7 @@ class Exercise {
   });
 
   static const List<Exercise> availableExercises = [
+    // PUSH UPS
     Exercise(
       id: ExerciseType.pushups,
       name: 'Отжимания',
@@ -44,6 +47,7 @@ class Exercise {
         'good_pace': 'Идеальный темп!',
       },
     ),
+    // SQUATS
     Exercise(
       id: ExerciseType.squats,
       name: 'Приседания',
@@ -64,6 +68,7 @@ class Exercise {
         'good_pace': 'Отличный ритм!',
       },
     ),
+    // BURPEES
     Exercise(
       id: ExerciseType.burpees,
       name: 'Берпи',
@@ -83,6 +88,46 @@ class Exercise {
         'incomplete': 'Выполните все этапы!',
         'bad_form': 'Четче переходы между позициями!',
         'good_pace': 'Мощно! Продолжайте!',
+      },
+    ),
+    // PLANK
+    Exercise(
+      id: ExerciseType.plank,
+      name: 'Планка',
+      description: 'Изометрическое удержание корпуса',
+      icon: '🧱',
+      difficulty: 'Средний',
+      instructions: [
+        'Локти под плечами',
+        'Корпус прямой, без прогиба',
+        'Не поднимайте таз высоко',
+      ],
+      tips: {
+        'correct': 'Идеальное удержание!',
+        'hips_low': 'Поднимите таз немного',
+        'hips_high': 'Опустите таз и выровняйтесь',
+        'bad_form': 'Сохраняйте прямую линию корпуса',
+        'good_pace': 'Отлично держите!',
+      },
+    ),
+    // JUMPING JACKS
+    Exercise(
+      id: ExerciseType.jumpingJacks,
+      name: 'Прыжки ⭐',
+      description: 'Прыжки "звездочка"',
+      icon: '✨',
+      difficulty: 'Легкий',
+      instructions: [
+        'Старт стоя, ноги вместе, руки вдоль тела',
+        'Прыжок — ноги в стороны, руки вверх',
+        'Прыжок — вернуться в старт',
+      ],
+      tips: {
+        'correct': 'Хорошая амплитуда!',
+        'too_fast': 'Держите стабильный ритм',
+        'low_arms': 'Выше руки!',
+        'narrow_legs': 'Шире ноги!',
+        'good_pace': 'Отличный темп!',
       },
     ),
   ];

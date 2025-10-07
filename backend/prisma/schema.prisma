@@ -1,0 +1,1140 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =================== ШАГ 1: USER & AUTHENTICATION ===================
+
+model User {
+  id           String @id @default(cuid())
+  email        String @unique
+  username     String @unique
+  passwordHash String 
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  profile              UserProfile?
+  settings             UserSettings?
+  habits               Habit[]
+  habitCompletions     HabitCompletion[]
+  tasks                Task[]
+  bodyMeasurements     BodyMeasurement[]
+  healthGoals          HealthGoal[]
+  exercises            ExerciseResult[]
+  workoutSessions      WorkoutSession[]
+  personalRecords      ExercisePersonalRecord[]
+  progress             UserProgress[]
+  dailyProgress        DayProgress[]
+  userAchievements     UserAchievement[]
+  sphereProgress       SphereProgress[]
+  notificationSettings NotificationSettings?
+  userQuotes           UserQuote[]
+  notifications        NotificationHistory[]
+
+  @@map("users")
+}
+
+model UserProfile {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  // Basic info from OnboardingData
+  fullName String
+  phone    String?
+  city     String?
+
+  // Onboarding status
+  onboardingCompleted Boolean @default(false)
+
+  // Avatar and personal info
+  avatarUrl String?
+  birthDate DateTime?
+  gender    Gender?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profiles")
+}
+
+model UserSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  // Notification settings
+  notificationsEnabled Boolean @default(true)
+  pushNotifications    Boolean @default(true)
+  emailNotifications   Boolean @default(false)
+
+  // App preferences
+  theme    Theme  @default(LIGHT)
+  language String @default("ru")
+  timezone String @default("UTC")
+
+  // Privacy settings
+  profilePublic Boolean @default(false)
+  shareProgress Boolean @default(true)
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+// =================== ENUMS ===================
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum Theme {
+  LIGHT
+  DARK
+  SYSTEM
+}
+
+// ========== HABIT ENUMS ==========
+
+enum HabitFrequencyType {
+  DAILY
+  WEEKLY
+  MONTHLY
+  CUSTOM
+}
+
+enum HabitDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum HabitProgressionType {
+  STANDARD
+  INCREMENTAL
+  TARGET
+}
+
+// ========== TASK ENUMS ==========
+
+enum TaskStatus {
+  ASSIGNED
+  IN_PROGRESS
+  DONE
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum RecurringTaskType {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+// ========== HEALTH & MEASUREMENT ENUMS ==========
+
+enum MeasurementCategory {
+  BASIC
+  BODY
+  COMPOSITION
+  VITAL
+}
+
+enum MeasurementUnit {
+  KG
+  CM
+  PERCENT
+  BPM
+  MMHG
+  CELSIUS
+  KCAL
+}
+
+enum HealthGoalType {
+  WEIGHT
+  BODY_FAT
+  MUSCLE
+  WAIST
+  CHEST
+  HIPS
+  BICEPS
+  STEPS
+  WATER
+  SLEEP
+  HEART_RATE
+  BLOOD_PRESSURE
+  CALORIES
+}
+
+enum HealthGoalPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum HealthGoalFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+// ========== EXERCISE ENUMS ==========
+
+enum ExerciseDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum ExerciseCategory {
+  STRENGTH
+  CARDIO
+  FLEXIBILITY
+  FUNCTIONAL
+  CORE
+}
+
+enum WorkoutStatus {
+  PLANNING
+  IN_PROGRESS
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum ExerciseRecordType {
+  MAX_REPS
+  BEST_TIME
+  MAX_WEIGHT
+  LONGEST_DURATION
+}
+
+// ========== PROGRESS ENUMS ==========
+
+enum DevelopmentZone {
+  BODY // Тело
+  WILL // Воля
+  FOCUS // Фокус
+  MIND // Разум
+  PEACE // Спокойствие
+  MONEY // Деньги
+}
+
+enum UserRank {
+  NOVICE // Новичок
+  STUDENT // Ученик  
+  WARRIOR // Воин
+  HERO // Герой
+  MASTER // Мастер
+  ALPHA // Альфа
+}
+
+enum AchievementCategory {
+  HABITS // Привычки
+  PROGRESS // Прогресс
+  STREAKS // Стрики
+  EXERCISE // Упражнения
+  HEALTH // Здоровье
+  SOCIAL // Социальные
+  SPECIAL // Особые
+}
+
+enum AchievementDifficulty {
+  COMMON // Обычное
+  RARE // Редкое
+  EPIC // Эпическое
+  LEGENDARY // Легендарное
+}
+
+// ========== NOTIFICATION ENUMS ==========
+
+enum QuoteCategory {
+  MONEY // Деньги и финансы
+  DISCIPLINE // Дисциплина
+  WILL // Воля и характер
+  FOCUS // Фокус и концентрация
+  STRENGTH // Сила и выносливость
+  SUCCESS // Успех и достижения
+  MINDSET // Мышление и психология
+  LEADERSHIP // Лидерство
+  WORK // Работа и карьера
+  HEALTH // Здоровье
+}
+
+enum TimeContext {
+  MORNING // Утро (7:00-9:00)
+  WORKDAY // Рабочий день (10:00-18:00)
+  EVENING // Вечер (19:00-22:00)
+  ANY // Любое время
+}
+
+enum NotificationType {
+  QUOTE // Цитата
+  HABIT // Напоминание о привычке
+  TASK // Напоминание о задаче
+  ACHIEVEMENT // Уведомление о достижении
+  PROGRESS // Прогресс
+  SYSTEM // Системное
+}
+
+enum NotificationStatus {
+  PENDING // Запланировано
+  SENT // Отправлено
+  DELIVERED // Доставлено
+  READ // Прочитано
+  FAILED // Ошибка доставки
+}
+
+// =================== PLACEHOLDER MODELS (будут детализированы в следующих шагах) ===================
+
+// ШАГ 2: Habits (Привычки)
+model Habit {
+  id     String @id @default(cuid())
+  userId String
+
+  // Основная информация
+  name        String
+  description String?
+  motivation  String?
+
+  // Визуальное оформление
+  iconName   String // название иконки
+  iconFamily String? // семейство иконки
+  colorHex   String // цвет в формате hex
+
+  // Категория и шаблон
+  categoryId String
+  templateId String? // если создано из шаблона
+
+  // Частота выполнения
+  frequencyType    HabitFrequencyType @default(DAILY)
+  timesPerWeek     Int?
+  timesPerMonth    Int?
+  specificWeekdays Int[] // дни недели 1-7
+
+  // Настройки
+  reminderTime    String? // время напоминания в формате HH:MM
+  duration        Int? // продолжительность в минутах
+  difficulty      HabitDifficulty @default(MEDIUM)
+  isActive        Boolean         @default(true)
+  enableReminders Boolean         @default(true)
+
+  // Прогресс
+  currentStreak Int @default(0)
+  maxStreak     Int @default(0)
+  strength      Int @default(0) // 0-100
+
+  // Связанные цели и теги
+  linkedGoal String?
+  tags       String[]
+
+  // Мотивационные сообщения
+  motivationalMessages String[]
+
+  // Тип прогрессии
+  progressionType HabitProgressionType @default(STANDARD)
+
+  // Настраиваемые параметры (JSON)
+  customSettings Json?
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category    HabitCategory     @relation(fields: [categoryId], references: [id])
+  template    HabitTemplate?    @relation(fields: [templateId], references: [id])
+  completions HabitCompletion[]
+  tasks       Task[]
+
+  @@map("habits")
+}
+
+model HabitCategory {
+  id String @id @default(cuid())
+
+  // Основная информация
+  name        String  @unique
+  displayName String
+  description String?
+
+  // Визуальное оформление
+  iconName String
+  colorHex String
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  habits    Habit[]
+  templates HabitTemplate[]
+
+  @@map("habit_categories")
+}
+
+model HabitTemplate {
+  id String @id @default(cuid())
+
+  // Основная информация
+  name        String
+  description String
+  motivation  String?
+
+  // Визуальное оформление  
+  iconName   String
+  iconFamily String?
+  colorHex   String
+
+  // Категория
+  categoryId String
+
+  // Настройки по умолчанию
+  defaultFrequencyType    HabitFrequencyType @default(DAILY)
+  defaultTimesPerWeek     Int?
+  defaultTimesPerMonth    Int?
+  defaultSpecificWeekdays Int[]
+  defaultDuration         Int?
+  defaultDifficulty       HabitDifficulty    @default(MEDIUM)
+  defaultTags             String[]
+
+  // Дополнительная информация
+  tips      String[]
+  isPopular Boolean  @default(false)
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  category HabitCategory @relation(fields: [categoryId], references: [id])
+  habits   Habit[]
+
+  @@map("habit_templates")
+}
+
+model HabitCompletion {
+  id      String @id @default(cuid())
+  habitId String
+  userId  String
+
+  // Информация о выполнении
+  date      DateTime @db.Date
+  completed Boolean  @default(true)
+
+  // Дополнительные данные
+  notes    String?
+  duration Int? // фактическая продолжительность в минутах
+  quality  Int? // оценка качества выполнения 1-5
+  mood     Int? // настроение после выполнения 1-5
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  habit Habit @relation(fields: [habitId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([habitId, date])
+  @@map("habit_completions")
+}
+
+// Сферы развития
+model DevelopmentSphere {
+  id          String  @id
+  name        String  @unique
+  displayName String
+  description String?
+  iconEmoji   String
+  colorHex    String
+
+  // Порядок отображения
+  sortOrder Int
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("development_spheres")
+}
+
+// ШАГ 3: Tasks (Задачи)
+model Task {
+  id     String @id @default(cuid())
+  userId String
+
+  // Основная информация
+  title       String
+  description String?
+
+  // Статус и приоритет
+  status   TaskStatus   @default(ASSIGNED)
+  priority TaskPriority @default(MEDIUM)
+
+  // Временные параметры
+  deadline   DateTime
+  reminderAt DateTime?
+
+  // Связь с привычками
+  habitId   String?
+  habitName String?
+
+  // Повторяющиеся задачи
+  isRecurring   Boolean            @default(false)
+  recurringType RecurringTaskType?
+
+  // Подзадачи и вложения
+  subtasks String[] // список подзадач
+  tags     String[] // теги
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  habit       Habit?           @relation(fields: [habitId], references: [id])
+  attachments TaskAttachment[]
+
+  @@map("tasks")
+}
+
+model TaskAttachment {
+  id     String @id @default(cuid())
+  taskId String
+
+  // Информация о файле
+  fileName String
+  fileSize Int?
+  filePath String
+  fileType String?
+
+  // Временные метки
+  createdAt DateTime @default(now())
+
+  // Связи
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("task_attachments")
+}
+
+model TaskTemplate {
+  id String @id @default(cuid())
+
+  // Основная информация
+  title       String
+  description String?
+
+  // Настройки по умолчанию
+  defaultPriority           TaskPriority @default(MEDIUM)
+  defaultDeadlineOffsetDays Int          @default(1)
+  defaultTags               String[]
+
+  // Связь с привычками
+  habitName String?
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("task_templates")
+}
+
+// ШАГ 4: Body & Health (Здоровье и измерения тела)
+model BodyMeasurement {
+  id     String @id @default(cuid())
+  userId String
+  typeId String
+
+  // Основные данные измерения
+  value     Float
+  timestamp DateTime @default(now())
+
+  // Дополнительная информация
+  notes      String?
+  photoPath  String?
+  mood       String?
+  confidence Float? // уверенность в точности 0-1
+
+  // Условия измерения (JSON)
+  conditions Json? // время дня, одежда, состояние тела
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  user User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type MeasurementType @relation(fields: [typeId], references: [id])
+
+  @@map("body_measurements")
+}
+
+model MeasurementType {
+  id String @id @default(cuid())
+
+  // Основная информация
+  name        String  @unique
+  shortName   String
+  description String?
+
+  // Категория и единица измерения
+  category MeasurementCategory
+  unit     MeasurementUnit
+
+  // Ограничения значений
+  minValue     Float?
+  maxValue     Float?
+  defaultValue Float?
+
+  // Настройки отображения
+  iconName      String
+  isRequired    Boolean @default(false)
+  allowsDecimal Boolean @default(true)
+  decimalPlaces Int     @default(1)
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  measurements BodyMeasurement[]
+  goals        HealthGoal[]
+
+  @@map("measurement_types")
+}
+
+model HealthGoal {
+  id     String  @id @default(cuid())
+  userId String
+  typeId String? // связь с типом измерения
+
+  // Основная информация
+  title    String
+  goalType HealthGoalType
+
+  // Значения цели
+  targetValue  Float
+  currentValue Float @default(0)
+
+  // Настройки цели
+  priority  HealthGoalPriority  @default(MEDIUM)
+  frequency HealthGoalFrequency @default(WEEKLY)
+
+  // Временные рамки
+  startDate  DateTime  @default(now())
+  targetDate DateTime?
+
+  // Дополнительная информация
+  notes    String?
+  isActive Boolean @default(true)
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  measurementType MeasurementType? @relation(fields: [typeId], references: [id])
+
+  @@map("health_goals")
+}
+
+// ШАГ 5: GTO & Exercises (Упражнения и тренировки)
+model Exercise {
+  id String @id @default(cuid())
+
+  // Основная информация
+  name         String   @unique
+  description  String
+  instructions String[] // пошаговые инструкции
+
+  // Визуальное оформление
+  iconEmoji  String
+  difficulty ExerciseDifficulty @default(MEDIUM)
+
+  // Настройки упражнения
+  category     ExerciseCategory
+  muscleGroups String[] // группы мышц
+
+  // AI распознавание
+  hasAIDetection Boolean @default(false)
+  aiTips         Json? // советы для AI (JSON)
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  workoutPlans    WorkoutExercise[]
+  results         ExerciseResult[]
+  personalRecords ExercisePersonalRecord[]
+
+  @@map("exercises")
+}
+
+model WorkoutSession {
+  id     String @id @default(cuid())
+  userId String
+
+  // Основная информация
+  name   String?
+  status WorkoutStatus @default(PLANNING)
+
+  // Временные рамки
+  startTime DateTime  @default(now())
+  endTime   DateTime?
+  duration  Int       @default(0) // в секундах
+
+  // Прогресс тренировки
+  totalTargetReps    Int   @default(0)
+  totalCompletedReps Int   @default(0)
+  averageQuality     Float @default(0)
+
+  // Дополнительная информация
+  notes String?
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exercises WorkoutExercise[]
+  results   ExerciseResult[]
+
+  @@map("workout_sessions")
+}
+
+model WorkoutExercise {
+  id         String @id @default(cuid())
+  sessionId  String
+  exerciseId String
+
+  // План упражнения
+  targetReps     Int
+  completedReps  Int     @default(0)
+  averageQuality Float   @default(0)
+  completed      Boolean @default(false)
+
+  // Порядок в тренировке
+  orderIndex Int
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  session  WorkoutSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  exercise Exercise       @relation(fields: [exerciseId], references: [id])
+
+  @@map("workout_exercises")
+}
+
+model ExerciseResult {
+  id         String  @id @default(cuid())
+  userId     String
+  sessionId  String?
+  exerciseId String
+
+  // Результат выполнения
+  repsCompleted Int
+  qualityScore  Float // 0-100
+  duration      Int? // в секундах
+
+  // AI данные
+  aiDetectionData Json? // данные AI распознавания
+  feedback        String? // обратная связь AI
+  formCorrection  String? // корректировка техники
+
+  // Фазы движения
+  movementPhases Json? // данные о фазах движения
+
+  // Временные метки
+  timestamp DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  // Связи
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session  WorkoutSession? @relation(fields: [sessionId], references: [id])
+  exercise Exercise        @relation(fields: [exerciseId], references: [id])
+
+  @@map("exercise_results")
+}
+
+model ExercisePersonalRecord {
+  id         String @id @default(cuid())
+  userId     String
+  exerciseId String
+
+  // Рекорд
+  recordType ExerciseRecordType
+  value      Float // количество повторений или время
+  date       DateTime           @default(now())
+
+  // Дополнительная информация
+  notes    String?
+  verified Boolean @default(false)
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exercise Exercise @relation(fields: [exerciseId], references: [id])
+
+  @@unique([userId, exerciseId, recordType])
+  @@map("exercise_personal_records")
+}
+
+// ШАГ 6: Path & Progress (Прогресс и достижения)
+model UserProgress {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  // Основной прогресс
+  totalSteps Int @default(0)
+  totalXP    Int @default(0)
+
+  // Стрики и активность
+  currentStreak  Int      @default(0)
+  longestStreak  Int      @default(0)
+  lastActiveDate DateTime @default(now())
+
+  // Текущая зона и ранг
+  currentZone DevelopmentZone @default(BODY)
+  currentRank UserRank        @default(NOVICE)
+
+  // Прогресс по сферам (JSON)
+  sphereProgress Json // Map<String, Float> - прогресс по каждой сфере 0-1
+
+  // Общая статистика (JSON)
+  totalStats Json // Map<String, Int> - калории, задачи, вода и т.д.
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dailyProgress DayProgress[]
+  achievements  UserAchievement[]
+
+  @@map("user_progress")
+}
+
+model DayProgress {
+  id         String @id @default(cuid())
+  userId     String
+  progressId String
+
+  // Дата и основные показатели
+  date           DateTime @db.Date
+  stepsCompleted Int      @default(0)
+  xpEarned       Int      @default(0)
+
+  // Выполненные привычки
+  completedHabits String[] // список ID или названий привычек
+
+  // Статистика дня (JSON)
+  dailyStats Json? // калории, вода, медитация и т.д.
+
+  // Дополнительная информация
+  mood   Int? // настроение дня 1-5
+  energy Int? // уровень энергии 1-5
+  notes  String? // заметки дня
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  progress UserProgress @relation(fields: [progressId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@map("day_progress")
+}
+
+model Achievement {
+  id String @id @default(cuid())
+
+  // Основная информация
+  key         String @unique // уникальный ключ достижения
+  title       String
+  description String
+
+  // Визуальное оформление
+  iconName  String
+  iconEmoji String?
+  colorHex  String?
+
+  // Категория и сложность
+  category   AchievementCategory
+  difficulty AchievementDifficulty @default(COMMON)
+
+  // Награды
+  xpReward   Int     @default(100)
+  badgeImage String?
+
+  // Условия получения
+  conditions Json // условия для разблокировки
+  isSecret   Boolean @default(false)
+  isActive   Boolean @default(true)
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  userAchievements UserAchievement[]
+
+  @@map("achievements")
+}
+
+model UserAchievement {
+  id            String @id @default(cuid())
+  userId        String
+  progressId    String
+  achievementId String
+
+  // Информация о получении
+  unlockedAt  DateTime @default(now())
+  progress    Float    @default(1.0) // прогресс достижения 0-1
+  isCompleted Boolean  @default(true)
+
+  // Дополнительные данные
+  metadata Json? // дополнительная информация
+
+  // Временные метки
+  createdAt DateTime @default(now())
+
+  // Связи
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userProgress UserProgress @relation(fields: [progressId], references: [id], onDelete: Cascade)
+  achievement  Achievement  @relation(fields: [achievementId], references: [id])
+
+  @@unique([userId, achievementId])
+  @@map("user_achievements")
+}
+
+model SphereProgress {
+  id     String @id @default(cuid())
+  userId String
+
+  // Информация о сфере
+  sphereKey  String // body, will, focus, mind, peace, money
+  sphereName String
+
+  // Прогресс
+  progress Float @default(0) // 0-1
+  level    Int   @default(1)
+  xp       Int   @default(0)
+
+  // Статистика
+  streakDays     Int @default(0)
+  completedTasks Int @default(0)
+  totalTimeSpent Int @default(0) // в минутах
+
+  // Последняя активность
+  lastActiveDate DateTime @default(now())
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sphereKey])
+  @@map("sphere_progress")
+}
+
+// ШАГ 7: Notifications (Уведомления и цитаты)
+model NotificationSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  // Основные настройки
+  isEnabled       Boolean @default(true)
+  startHour       Int     @default(7)
+  endHour         Int     @default(22)
+  intervalMinutes Int     @default(60)
+
+  // Настройки звука и вибрации
+  soundEnabled     Boolean @default(true)
+  vibrationEnabled Boolean @default(true)
+
+  // Расписание
+  weekendsEnabled Boolean @default(true)
+  disabledDays    Int[] // дни недели 1-7
+
+  // Категории цитат
+  enabledCategories String[] @default(["money", "discipline", "will", "focus", "success"])
+
+  // Дополнительные настройки
+  preferredTimeZone    String  @default("UTC")
+  smartScheduling      Boolean @default(true)
+  premiumQuotesEnabled Boolean @default(false)
+  maxDailyQuotes       Int     @default(15)
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_settings")
+}
+
+model Quote {
+  id String @id @default(cuid())
+
+  // Основная информация
+  text   String
+  author String
+
+  // Категория и контекст
+  category    QuoteCategory
+  timeContext TimeContext   @default(ANY)
+
+  // Настройки отображения
+  priority    Int      @default(5) // 1-10
+  tags        String[]
+  targetZones String[] // ТЕЛО, ВОЛЯ, ФОКУС и т.д.
+
+  // Премиум функции
+  isPremium Boolean @default(false)
+
+  // Статистика
+  viewCount Int @default(0)
+  likeCount Int @default(0)
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  userQuotes    UserQuote[]
+  notifications NotificationHistory[]
+
+  @@map("quotes")
+}
+
+model UserQuote {
+  id      String @id @default(cuid())
+  userId  String
+  quoteId String
+
+  // Взаимодействие пользователя
+  lastShown DateTime?
+  viewCount Int       @default(0)
+  liked     Boolean   @default(false)
+
+  // Пользовательские настройки
+  isFavorite Boolean @default(false)
+  isHidden   Boolean @default(false)
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, quoteId])
+  @@map("user_quotes")
+}
+
+model NotificationHistory {
+  id     String @id @default(cuid())
+  userId String
+
+  // Основная информация
+  title String
+  body  String?
+  type  NotificationType
+
+  // Связанные данные
+  quoteId String?
+
+  // Статус доставки
+  status NotificationStatus @default(PENDING)
+
+  // Время планирования и доставки
+  scheduledAt DateTime
+  sentAt      DateTime?
+  readAt      DateTime?
+
+  // Дополнительные данные
+  metadata Json? // дополнительные данные уведомления
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Связи
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quote Quote? @relation(fields: [quoteId], references: [id])
+
+  @@map("notification_history")
+}
+
+model NotificationTemplate {
+  id String @id @default(cuid())
+
+  // Основная информация
+  name         String @unique
+  title        String
+  bodyTemplate String // шаблон с переменными
+
+  // Тип и категория
+  type     NotificationType
+  category String?
+
+  // Настройки
+  isActive Boolean @default(true)
+  priority Int     @default(5)
+
+  // Условия показа
+  conditions Json? // условия для показа уведомления
+
+  // Временные метки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("notification_templates")
+}

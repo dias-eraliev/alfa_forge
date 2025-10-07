@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import '../shared/bottom_nav_scaffold.dart';
 import '../../app/theme.dart';
+import 'models/habit_model.dart';
+import 'widgets/advanced_add_habit_dialog.dart';
+import '../../core/services/api_service.dart';
+import '../../core/models/api_models.dart';
+import 'utils/habit_converter.dart';
 
 class HabitsPage extends StatefulWidget {
   const HabitsPage({super.key});
@@ -11,18 +16,25 @@ class HabitsPage extends StatefulWidget {
 }
 
 class _HabitsPageState extends State<HabitsPage> with TickerProviderStateMixin {
-  int currentMonth = 8; // Август
-  int currentYear = 2025;
+  int currentMonth = DateTime.now().month;
+  int currentYear = DateTime.now().year;
   
   late AnimationController _fadeController;
   late AnimationController _scaleController;
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
 
-  // Состояние привычек для каждого дня месяца
+  // API данные
+  final ApiService _apiService = ApiService.instance;
+  List<ApiHabit> _apiHabits = [];
+  bool _isLoading = true;
+  String? _errorMessage;
+
+  // Состояние привычек для каждого дня месяца (теперь из API)
   Map<String, List<bool?>> habitsData = {};
 
-  final List<Map<String, dynamic>> habits = [
+  // Резервные моковые данные на случай отсутствия API
+  final List<Map<String, dynamic>> _fallbackHabits = [
     {
       'id': 'cold_shower',
       'name': 'Холодный душ',
@@ -80,6 +92,14 @@ class _HabitsPageState extends State<HabitsPage> with TickerProviderStateMixin {
     },
   ];
 
+  // Геттер для получения текущих привычек (API или моковые)
+  List<Map<String, dynamic>> get habits {
+    if (_apiHabits.isNotEmpty) {
+      return _apiHabits.map((apiHabit) => _convertApiHabitToMap(apiHabit)).toList();
+    }
+    return _fallbackHabits;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -99,9 +119,66 @@ class _HabitsPageState extends State<HabitsPage> with TickerProviderStateMixin {
       CurvedAnimation(parent: _scaleController, curve: Curves.elasticOut),
     );
 
-    _initializeHabitsData();
+    _initializeApi();
     _fadeController.forward();
     _scaleController.forward();
+  }
+
+  // Инициализация API и загрузка данных
+  Future<void> _initializeApi() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+
+      // Инициализируем API сервис
+      await _apiService.initialize();
+
+      // Загружаем привычки из API
+      await _loadHabitsFromApi();
+
+      // Инициализируем данные привычек
+      _initializeHabitsData();
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Ошибка загрузки: $e';
+        // Используем моковые данные при ошибке
+        _initializeHabitsData();
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  // Загружаем привычки из API
+  Future<void> _loadHabitsFromApi() async {
+    try {
+      final response = await _apiService.habits.getHabits();
+      
+      if (response.isSuccess && response.data != null) {
+        setState(() {
+          _apiHabits = response.data!;
+          _errorMessage = null;
+        });
+      } else {
+        throw Exception(response.error ?? 'Неизвестная ошибка API');
+      }
+    } catch (e) {
+      // При ошибке API используем моковые данные
+      print('Ошибка загрузки привычек из API: $e');
+      setState(() {
+        _apiHabits = [];
+        _errorMessage = 'Используются локальные данные';
+      });
+    }
+  }
+
+  // Конвертируем API привычку в формат для UI используя HabitConverter
+  Map<String, dynamic> _convertApiHabitToMap(ApiHabit apiHabit) {
+    return HabitConverter.apiHabitToMap(apiHabit);
   }
 
   void _initializeHabitsData() {
@@ -220,173 +297,59 @@ class _HabitsPageState extends State<HabitsPage> with TickerProviderStateMixin {
   }
 
   void _showAddHabitDialog() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isSmallScreen = screenWidth < 600;
-
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => Container(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
-        decoration: BoxDecoration(
-          color: PRIMETheme.bg,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.3),
-              blurRadius: 20,
-              offset: const Offset(0, -5),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Заголовок
-            Container(
-              padding: EdgeInsets.all(isSmallScreen ? 20 : 24),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    PRIMETheme.primary.withOpacity(0.1),
-                    PRIMETheme.primary.withOpacity(0.05),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-              ),
-              child: Row(
+      builder: (context) => AdvancedAddHabitDialog(
+        onHabitAdded: (habit) {
+          setState(() {
+            habits.add({
+              'id': habit.id,
+              'name': habit.name,
+              'icon': habit.icon,
+              'frequency': habit.frequency.displayText,
+              'description': habit.description ?? 'Новая привычка',
+              'streak': 0,
+              'maxStreak': 0,
+              'strength': 0,
+              'color': habit.color,
+            });
+            
+            // Инициализируем данные для новой привычки
+            habitsData[habit.id] = _generateHabitData(habit.id);
+          });
+
+          // Показываем уведомление об успешном добавлении
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
                 children: [
-                  Container(
-                    width: isSmallScreen ? 40 : 48,
-                    height: isSmallScreen ? 40 : 48,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          PRIMETheme.primary,
-                          PRIMETheme.primary.withOpacity(0.8),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.add_circle_outline,
-                      color: Colors.white,
-                      size: isSmallScreen ? 20 : 24,
-                    ),
+                  Icon(
+                    habit.icon,
+                    color: Colors.white,
+                    size: 20,
                   ),
-                  SizedBox(width: isSmallScreen ? 12 : 16),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Добавить привычку',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        fontSize: isSmallScreen ? 18 : 22,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close, color: PRIMETheme.sand),
-                  ),
-                ],
-              ),
-            ),
-            
-            // Содержимое
-            Padding(
-              padding: EdgeInsets.all(isSmallScreen ? 20 : 24),
-              child: Column(
-                children: [
-                  Container(
-                    padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
-                    decoration: BoxDecoration(
-                      color: PRIMETheme.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: PRIMETheme.primary.withOpacity(0.2)),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.construction,
-                          color: PRIMETheme.primary,
-                          size: isSmallScreen ? 24 : 28,
-                        ),
-                        SizedBox(width: isSmallScreen ? 12 : 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'В разработке',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: PRIMETheme.primary,
-                                  fontSize: isSmallScreen ? 16 : 18,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Функция добавления новых привычек будет доступна в следующем обновлении',
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  color: PRIMETheme.sandWeak,
-                                  fontSize: isSmallScreen ? 14 : 16,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  SizedBox(height: isSmallScreen ? 20 : 24),
-                  
-                  // Кнопка закрытия
-                  InkWell(
-                    onTap: () => Navigator.pop(context),
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      width: double.infinity,
-                      padding: EdgeInsets.symmetric(
-                        horizontal: isSmallScreen ? 16 : 20,
-                        vertical: isSmallScreen ? 14 : 16,
-                      ),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            PRIMETheme.primary,
-                            PRIMETheme.primary.withOpacity(0.8),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: PRIMETheme.primary.withOpacity(0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Text(
-                        'Понятно',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: isSmallScreen ? 16 : 18,
-                        ),
-                        textAlign: TextAlign.center,
+                      'Привычка "${habit.name}" добавлена! 🎉',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                 ],
               ),
+              backgroundColor: habit.color,
+              duration: const Duration(seconds: 3),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              margin: const EdgeInsets.all(16),
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

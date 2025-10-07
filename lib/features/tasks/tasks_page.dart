@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import '../shared/bottom_nav_scaffold.dart';
 import '../../app/theme.dart';
+import 'models/task_model.dart';
+import 'widgets/advanced_add_task_dialog.dart';
+import '../../core/services/api_service.dart';
+import '../../core/models/api_models.dart';
+import 'utils/task_converter.dart';
 
 class TasksPage extends StatefulWidget {
   const TasksPage({super.key});
@@ -17,8 +22,17 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
   Timer? focusTimer;
   late AnimationController _timerAnimationController;
   
+  // API Integration
+  final ApiService _apiService = ApiService.instance;
+  bool _isLoading = true;
+  bool _isApiConnected = false;
+  String? _errorMessage;
+  
   // Состояние задач с расширенными данными
-  List<Map<String, dynamic>> todayTasks = [
+  List<Map<String, dynamic>> todayTasks = [];
+  
+  // Fallback данные
+  List<Map<String, dynamic>> _fallbackTasks = [
     {
       'text': 'Купить продукты на неделю', 
       'done': false, 
@@ -98,6 +112,69 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
       duration: const Duration(seconds: 1),
       vsync: this,
     );
+    _loadTasksFromApi();
+  }
+
+  // Загрузка задач из API с fallback на локальные данные
+  Future<void> _loadTasksFromApi() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // Пытаемся загрузить задачи сегодня из API
+      final response = await _apiService.tasks.getTodayTasks();
+      
+      if (response.isSuccess && response.data != null) {
+        // Успешно получили данные из API
+        setState(() {
+          todayTasks = TaskConverter.apiTasksToMaps(response.data!);
+          _isApiConnected = true;
+          _isLoading = false;
+        });
+      } else {
+        // API вернул ошибку, используем fallback
+        _handleApiError(response.error ?? 'Неизвестная ошибка API');
+      }
+    } catch (e) {
+      // Сетевая ошибка или другие проблемы
+      _handleApiError('Ошибка сети: $e');
+    }
+  }
+
+  // Обработка ошибок API
+  void _handleApiError(String error) {
+    setState(() {
+      todayTasks = TaskConverter.getFallbackTasks();
+      _isApiConnected = false;
+      _errorMessage = error;
+      _isLoading = false;
+    });
+    
+    // Показываем пользователю, что используются локальные данные
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Используются локальные данные. API недоступен.',
+            style: const TextStyle(color: PRIMETheme.sand),
+          ),
+          backgroundColor: PRIMETheme.warn,
+          duration: const Duration(seconds: 3),
+          action: SnackBarAction(
+            label: 'Повторить',
+            textColor: PRIMETheme.sand,
+            onPressed: _loadTasksFromApi,
+          ),
+        ),
+      );
+    }
+  }
+
+  // Обновление задач (pull-to-refresh)
+  Future<void> _refreshTasks() async {
+    await _loadTasksFromApi();
   }
 
   @override
@@ -164,19 +241,10 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
   void _addNewTask() {
     showDialog(
       context: context,
-      builder: (context) => _AddTaskDialog(
-        onTaskAdded: (taskText) {
+      builder: (context) => AdvancedAddTaskDialog(
+        onTaskAdded: (task) {
           setState(() {
-            todayTasks.add({
-              'text': taskText,
-              'done': false,
-              'habit': null,
-              'id': DateTime.now().millisecondsSinceEpoch.toString(),
-              'description': 'Новая задача без описания',
-              'deadline': DateTime.now().add(const Duration(days: 1)),
-              'priority': 'medium',
-              'status': 'assigned'
-            });
+            todayTasks.add(task.toMap());
           });
         },
       ),
@@ -1740,78 +1808,6 @@ class _QuickActionButton extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _AddTaskDialog extends StatefulWidget {
-  final Function(String) onTaskAdded;
-
-  const _AddTaskDialog({required this.onTaskAdded});
-
-  @override
-  State<_AddTaskDialog> createState() => _AddTaskDialogState();
-}
-
-class _AddTaskDialogState extends State<_AddTaskDialog> {
-  final TextEditingController _controller = TextEditingController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: Theme.of(context).cardColor,
-      title: Text(
-        'Добавить задачу',
-        style: Theme.of(context).textTheme.titleLarge,
-      ),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        style: Theme.of(context).textTheme.bodyLarge,
-        decoration: const InputDecoration(
-          hintText: 'Введите текст задачи...',
-          hintStyle: TextStyle(color: PRIMETheme.sandWeak),
-          enabledBorder: UnderlineInputBorder(
-            borderSide: BorderSide(color: PRIMETheme.line),
-          ),
-          focusedBorder: UnderlineInputBorder(
-            borderSide: BorderSide(color: PRIMETheme.primary),
-          ),
-        ),
-        onSubmitted: (value) {
-          if (value.trim().isNotEmpty) {
-            widget.onTaskAdded(value.trim());
-            Navigator.pop(context);
-          }
-        },
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text(
-            'Отмена',
-            style: TextStyle(color: PRIMETheme.sandWeak),
-          ),
-        ),
-        TextButton(
-          onPressed: () {
-            if (_controller.text.trim().isNotEmpty) {
-              widget.onTaskAdded(_controller.text.trim());
-              Navigator.pop(context);
-            }
-          },
-          child: const Text(
-            'Добавить',
-            style: TextStyle(color: PRIMETheme.primary),
-          ),
-        ),
-      ],
     );
   }
 }

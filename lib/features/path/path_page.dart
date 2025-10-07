@@ -1,250 +1,1133 @@
 import 'package:flutter/material.dart';
-import 'dart:async';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../shared/bottom_nav_scaffold.dart';
 import '../../app/theme.dart';
-import 'widgets/six_goals_grid.dart';
-import '../gto/gto_page.dart';
+import '../../core/models/api_models.dart';
+import 'providers/path_providers.dart';
 
-class PathPage extends StatefulWidget {
+class PathPage extends ConsumerStatefulWidget {
   const PathPage({super.key});
 
   @override
-  State<PathPage> createState() => _PathPageState();
+  ConsumerState<PathPage> createState() => _PathPageState();
 }
 
-class _PathPageState extends State<PathPage> {
-  // Состояние привычек
-  List<Map<String, dynamic>> habits = [
-    {'name': 'Вода 2L', 'progress': '1.2L / 2L', 'done': false},
-    {'name': 'Бег 5км', 'progress': '19:00', 'done': false},
-    {'name': 'Медитация', 'progress': '5 мин', 'done': true},
-  ];
+class _PathPageState extends ConsumerState<PathPage> with TickerProviderStateMixin {
+  late AnimationController _fadeController;
+  late AnimationController _scaleController;
+  late Animation<double> _fadeAnimation;
+  late Animation<double> _scaleAnimation;
 
-  // Состояние задачи дня
-  bool isTaskStarted = false;
+  @override
+  void initState() {
+    super.initState();
+    _fadeController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _scaleController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+    
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
+    );
+    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(parent: _scaleController, curve: Curves.elasticOut),
+    );
+
+    _fadeController.forward();
+    _scaleController.forward();
+
+    // Загружаем данные при инициализации
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(pathPageControllerProvider.notifier).loadAllData();
+    });
+  }
+
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    _scaleController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmallScreen = screenWidth < 400;
+
+    // Слушаем состояние загрузки и ошибок
+    final isLoading = ref.watch(isPathPageLoadingProvider);
+    final error = ref.watch(pathPageErrorProvider);
+    final userMetrics = ref.watch(userMetricsProvider);
+    final dailyStats = ref.watch(dailyStatsProvider);
+
     return BottomNavScaffold(
       currentRoute: '/',
       child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Заголовок PRIME
-              Text(
-                'PRIME',
-                style: Theme.of(context).textTheme.displayLarge,
-              ),
-              const SizedBox(height: 8),
-              
-              // Статус игрока с рамкой и кнопка MY MAP
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: RefreshIndicator(
+            onRefresh: () async {
+              await ref.read(pathPageControllerProvider.notifier).refresh();
+            },
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: PRIMETheme.primary, width: 2),
-                      borderRadius: BorderRadius.circular(8),
-                      color: PRIMETheme.primary.withOpacity(0.1),
-                    ),
-                    child: Text(
-                      'ВОИН',
-                      style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                        color: PRIMETheme.primary,
-                        fontSize: 24,
-                      ),
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const SixGoalsGrid(),
-                      ),
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: PRIMETheme.sand, width: 1),
-                        borderRadius: BorderRadius.circular(6),
-                        color: PRIMETheme.sand.withOpacity(0.1),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.grid_view,
-                            color: PRIMETheme.sand,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'МОИ ЦЕЛИ',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: PRIMETheme.sand,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                  // Заголовок и уровень
+                  _buildHeader(context, isSmallScreen, userMetrics),
+                  SizedBox(height: isSmallScreen ? 20 : 24),
+
+                  // Показываем ошибку если есть
+                  if (error != null) _buildErrorWidget(context, error),
+
+                  // Метрики дня
+                  _buildDailyMetrics(context, isSmallScreen, userMetrics, dailyStats),
+                  SizedBox(height: isSmallScreen ? 20 : 24),
+
+                  // Быстрые победы секция
+                  _buildQuickWinsSection(context, isSmallScreen, dailyStats),
+                  SizedBox(height: isSmallScreen ? 20 : 24),
+
+                  // Ежедневные привычки
+                  _buildTodayHabits(context, isSmallScreen, isLoading),
+                  SizedBox(height: isSmallScreen ? 20 : 24),
+
+                  // Быстрые задачи
+                  _buildQuickTasks(context, isSmallScreen, isLoading),
+                  SizedBox(height: isSmallScreen ? 20 : 24),
+
+                  // Кнопки действий
+                  _buildActionButtons(context, isSmallScreen),
                 ],
               ),
-              const SizedBox(height: 24),
-
-              // Метрики СТРИК и ПРОГРЕСС (кликабельные)
-              Row(
-                children: [
-                  Expanded(
-                    child: _MetricCard(
-                      title: 'СТРИК',
-                      value: '12',
-                      icon: Icons.local_fire_department,
-                      onTap: () => _showStreakDetails(),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: _MetricCard(
-                      title: 'ПРОГРЕСС',
-                      value: '67%',
-                      icon: Icons.timeline,
-                      onTap: () => _showProgressDetails(),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              // Задача дня
-              _TaskCard(
-                isStarted: isTaskStarted,
-                onStart: () => _startDailyTask(),
-              ),
-              const SizedBox(height: 24),
-
-              // Сегодня (ближайшее окно)
-              Text(
-                'Сегодня (ближайшее окно)',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 12),
-              _HabitsList(
-                habits: habits,
-                onHabitToggle: (index) => _toggleHabit(index),
-              ),
-              const SizedBox(height: 24),
-
-              // Прогресс недели (кликабельный)
-              _WeekProgress(
-                onTap: () => _showWeekDetails(),
-              ),
-              const SizedBox(height: 24),
-
-              // Кнопки действий
-              Row(
-                children: [
-                  Expanded(
-                    child: _ActionButton(
-                      text: '+ Привычка',
-                      onTap: () => _showHabitModal(context),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _ActionButton(
-                      text: '+ Задача',
-                      onTap: () => _showTaskModal(context),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              _ActionButton(
-                text: 'ГТО',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const GTOPage(),
-                  ),
-                ),
-                isPrimary: true,
-              ),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  // Переключение состояния привычки
-  void _toggleHabit(int index) {
-    setState(() {
-      habits[index]['done'] = !habits[index]['done'];
-    });
-    
-    // Показать снэкбар с обратной связью
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          habits[index]['done'] 
-            ? '${habits[index]['name']} отмечена как выполненная!'
-            : '${habits[index]['name']} отмечена как невыполненная',
+  // Виджет ошибки
+  Widget _buildErrorWidget(BuildContext context, String error) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: PRIMETheme.warn.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: PRIMETheme.warn.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.warning_amber, color: PRIMETheme.warn),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              error,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: PRIMETheme.warn,
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: () {
+              ref.read(pathPageControllerProvider.notifier).clearError();
+            },
+            icon: const Icon(Icons.close, color: PRIMETheme.warn),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Заголовок и статус
+  Widget _buildHeader(BuildContext context, bool isSmallScreen, Map<String, dynamic> userMetrics) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'PRIME',
+              style: Theme.of(context).textTheme.displayLarge?.copyWith(
+                fontSize: isSmallScreen ? 32 : 40,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: isSmallScreen ? 8 : 12, 
+                vertical: isSmallScreen ? 4 : 6
+              ),
+              decoration: BoxDecoration(
+                border: Border.all(color: PRIMETheme.primary, width: 2),
+                borderRadius: BorderRadius.circular(8),
+                color: PRIMETheme.primary.withOpacity(0.1),
+              ),
+              child: Text(
+                userMetrics['currentRank'] ?? 'НОВИЧОК',
+                style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                  color: PRIMETheme.primary,
+                  fontSize: isSmallScreen ? 18 : 24,
+                ),
+              ),
+            ),
+          ],
         ),
-        backgroundColor: habits[index]['done'] ? PRIMETheme.success : PRIMETheme.warn,
-        duration: const Duration(seconds: 2),
+        Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: isSmallScreen ? 8 : 12, 
+            vertical: isSmallScreen ? 6 : 8
+          ),
+          decoration: BoxDecoration(
+            color: PRIMETheme.success.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: PRIMETheme.success.withOpacity(0.5)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.trending_up,
+                color: PRIMETheme.success,
+                size: isSmallScreen ? 14 : 16,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'АКТИВЕН',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: PRIMETheme.success,
+                  fontSize: isSmallScreen ? 10 : 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Метрики дня
+  Widget _buildDailyMetrics(BuildContext context, bool isSmallScreen, 
+      Map<String, dynamic> userMetrics, Map<String, dynamic> dailyStats) {
+    return ScaleTransition(
+      scale: _scaleAnimation,
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildMetricCard(
+              context: context,
+              title: 'СТРИК',
+              value: '${userMetrics['streak'] ?? dailyStats['streak'] ?? 0}',
+              subtitle: 'дней',
+              icon: Icons.local_fire_department,
+              color: Colors.orange,
+              isSmallScreen: isSmallScreen,
+              onTap: () => _showStreakDetails(context, userMetrics),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: _buildMetricCard(
+              context: context,
+              title: 'ОЧКИ',
+              value: '${userMetrics['totalPoints'] ?? dailyStats['totalPoints'] ?? 0}',
+              subtitle: '/${userMetrics['nextLevelPoints'] ?? 100}',
+              icon: Icons.star,
+              color: PRIMETheme.primary,
+              isSmallScreen: isSmallScreen,
+              onTap: () => _showPointsDetails(context, userMetrics),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  // Запуск задачи дня
-  void _startDailyTask() {
-    setState(() {
-      isTaskStarted = true;
-    });
+  // Секция быстрых побед
+  Widget _buildQuickWinsSection(BuildContext context, bool isSmallScreen, Map<String, dynamic> dailyStats) {
+    final totalProgress = dailyStats['totalProgress'] ?? 0.0;
+    final completedHabits = dailyStats['completedHabits'] ?? 0;
+    final totalHabits = dailyStats['totalHabits'] ?? 0;
+    final completedTasks = dailyStats['completedTasks'] ?? 0;
+    final totalTasks = dailyStats['totalTasks'] ?? 0;
+
+    return Container(
+      padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            PRIMETheme.primary.withOpacity(0.1),
+            PRIMETheme.primary.withOpacity(0.05),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: PRIMETheme.primary.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.emoji_events,
+                color: PRIMETheme.primary,
+                size: isSmallScreen ? 20 : 24,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Быстрые победы',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontSize: isSmallScreen ? 18 : 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${(totalProgress * 100).toInt()}%',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: PRIMETheme.primary,
+                  fontSize: isSmallScreen ? 16 : 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          LinearProgressIndicator(
+            value: totalProgress,
+            backgroundColor: PRIMETheme.line,
+            valueColor: AlwaysStoppedAnimation<Color>(PRIMETheme.primary),
+            minHeight: 6,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Выполнено: $completedHabits/$totalHabits привычек, $completedTasks/$totalTasks задач',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontSize: isSmallScreen ? 12 : 14,
+              color: PRIMETheme.sandWeak,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Сегодняшние привычки
+  Widget _buildTodayHabits(BuildContext context, bool isSmallScreen, bool isLoading) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Привычки сегодня',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontSize: isSmallScreen ? 18 : 22,
+              ),
+            ),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: () => context.go('/habits'),
+              icon: Icon(
+                Icons.arrow_forward,
+                size: isSmallScreen ? 16 : 18,
+                color: PRIMETheme.primary,
+              ),
+              label: Text(
+                'Все',
+                style: TextStyle(
+                  color: PRIMETheme.primary,
+                  fontSize: isSmallScreen ? 12 : 14,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Consumer(
+          builder: (context, ref, child) {
+            final todayHabitsAsync = ref.watch(todayHabitsProvider);
+            
+            return todayHabitsAsync.when(
+              loading: () => _buildLoadingIndicator('Загружаем привычки...'),
+              error: (error, stack) => _buildErrorCard('Ошибка загрузки привычек: $error'),
+              data: (habits) {
+                if (habits.isEmpty) {
+                  return _buildEmptyStateCard(
+                    'Нет активных привычек',
+                    'Добавьте привычки для отслеживания прогресса',
+                    Icons.add_task,
+                    () => context.go('/habits'),
+                  );
+                }
+                
+                return Column(
+                  children: habits.map((habit) => _buildHabitCard(
+                    context: context,
+                    habit: habit,
+                    isSmallScreen: isSmallScreen,
+                    onTap: () => _toggleHabit(habit.id),
+                  )).toList(),
+                );
+              },
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  // Быстрые задачи
+  Widget _buildQuickTasks(BuildContext context, bool isSmallScreen, bool isLoading) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Быстрые задачи',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontSize: isSmallScreen ? 18 : 22,
+              ),
+            ),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: () => context.go('/tasks'),
+              icon: Icon(
+                Icons.arrow_forward,
+                size: isSmallScreen ? 16 : 18,
+                color: PRIMETheme.primary,
+              ),
+              label: Text(
+                'Все',
+                style: TextStyle(
+                  color: PRIMETheme.primary,
+                  fontSize: isSmallScreen ? 12 : 14,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Consumer(
+          builder: (context, ref, child) {
+            final quickTasksAsync = ref.watch(quickTasksProvider);
+            
+            return quickTasksAsync.when(
+              loading: () => _buildLoadingIndicator('Загружаем задачи...'),
+              error: (error, stack) => _buildErrorCard('Ошибка загрузки задач: $error'),
+              data: (tasks) {
+                if (tasks.isEmpty) {
+                  return _buildEmptyStateCard(
+                    'Нет быстрых задач',
+                    'Добавьте задачи для повышения продуктивности',
+                    Icons.add_circle,
+                    () => context.go('/tasks'),
+                  );
+                }
+                
+                return Column(
+                  children: tasks.map((task) => _buildTaskCard(
+                    context: context,
+                    task: task,
+                    isSmallScreen: isSmallScreen,
+                    onTap: () => _toggleTask(task.id),
+                  )).toList(),
+                );
+              },
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  // Загрузочный индикатор
+  Widget _buildLoadingIndicator(String message) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          const CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(PRIMETheme.primary),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            message,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: PRIMETheme.sandWeak,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Карточка ошибки
+  Widget _buildErrorCard(String message) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: PRIMETheme.warn.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: PRIMETheme.warn.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.error_outline, color: PRIMETheme.warn),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              message,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: PRIMETheme.warn,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Состояние пустого списка
+  Widget _buildEmptyStateCard(String title, String subtitle, IconData icon, VoidCallback onAction) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: PRIMETheme.line),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, size: 48, color: PRIMETheme.sandWeak),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: PRIMETheme.sand,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: PRIMETheme.sandWeak,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: onAction,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: PRIMETheme.primary,
+              foregroundColor: PRIMETheme.sand,
+            ),
+            child: const Text('Добавить'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Кнопки действий
+  Widget _buildActionButtons(BuildContext context, bool isSmallScreen) {
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () => context.go('/gto'),
+            icon: Icon(
+              Icons.fitness_center,
+              size: isSmallScreen ? 18 : 20,
+            ),
+            label: Text(
+              'ГТО Тренировка',
+              style: TextStyle(fontSize: isSmallScreen ? 14 : 16),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: PRIMETheme.primary,
+              foregroundColor: PRIMETheme.sand,
+              padding: EdgeInsets.symmetric(
+                vertical: isSmallScreen ? 12 : 16,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () => _showFocusTimer(context),
+                icon: Icon(
+                  Icons.timer,
+                  size: isSmallScreen ? 16 : 18,
+                ),
+                label: Text(
+                  'Фокус',
+                  style: TextStyle(fontSize: isSmallScreen ? 12 : 14),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).cardColor,
+                  foregroundColor: PRIMETheme.sand,
+                  side: const BorderSide(color: PRIMETheme.line),
+                  padding: EdgeInsets.symmetric(
+                    vertical: isSmallScreen ? 10 : 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () => _showStatsOverview(context),
+                icon: Icon(
+                  Icons.analytics,
+                  size: isSmallScreen ? 16 : 18,
+                ),
+                label: Text(
+                  'Статистика',
+                  style: TextStyle(fontSize: isSmallScreen ? 12 : 14),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).cardColor,
+                  foregroundColor: PRIMETheme.sand,
+                  side: const BorderSide(color: PRIMETheme.line),
+                  padding: EdgeInsets.symmetric(
+                    vertical: isSmallScreen ? 10 : 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () => context.go('/notifications'),
+            icon: Icon(
+              Icons.notifications_active,
+              size: isSmallScreen ? 16 : 18,
+            ),
+            label: Text(
+              'Мотивационные уведомления',
+              style: TextStyle(fontSize: isSmallScreen ? 12 : 14),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).cardColor,
+              foregroundColor: PRIMETheme.sand,
+              side: BorderSide(color: PRIMETheme.primary.withOpacity(0.5)),
+              padding: EdgeInsets.symmetric(
+                vertical: isSmallScreen ? 10 : 12,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Карточка метрики
+  Widget _buildMetricCard({
+    required BuildContext context,
+    required String title,
+    required String value,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required bool isSmallScreen,
+    VoidCallback? onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: PRIMETheme.line),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: color, size: isSmallScreen ? 16 : 20),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontSize: isSmallScreen ? 12 : 14,
+                    color: PRIMETheme.sandWeak,
+                  ),
+                ),
+                const Spacer(),
+                if (onTap != null)
+                  Icon(
+                    Icons.info_outline,
+                    color: PRIMETheme.sandWeak,
+                    size: isSmallScreen ? 12 : 14,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  value,
+                  style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                    fontSize: isSmallScreen ? 24 : 32,
+                    color: color,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontSize: isSmallScreen ? 10 : 12,
+                    color: PRIMETheme.sandWeak,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Карточка привычки с API данными
+  Widget _buildHabitCard({
+    required BuildContext context,
+    required ApiHabit habit,
+    required bool isSmallScreen,
+    required VoidCallback onTap,
+  }) {
+    // Проверяем выполнение сегодня
+    final today = DateTime.now();
+    final todayCompletion = habit.completions.any((c) => 
+      c.date.day == today.day &&
+      c.date.month == today.month &&
+      c.date.year == today.year
+    );
+
+    final habitColor = _getHabitColor(habit.category);
+    final progressValue = todayCompletion ? 1.0 : 0.0;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: EdgeInsets.all(isSmallScreen ? 10 : 12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: todayCompletion ? habitColor : PRIMETheme.line,
+                width: todayCompletion ? 2 : 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: Icon(
+                    todayCompletion ? Icons.check_circle : Icons.circle_outlined,
+                    color: todayCompletion ? habitColor : PRIMETheme.sandWeak,
+                    size: isSmallScreen ? 20 : 24,
+                    key: ValueKey(todayCompletion),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Icon(
+                  _getHabitIcon(habit.category),
+                  color: habitColor,
+                  size: isSmallScreen ? 18 : 20,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        habit.name,
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontSize: isSmallScreen ? 14 : 16,
+                          decoration: todayCompletion ? TextDecoration.lineThrough : null,
+                          color: todayCompletion ? PRIMETheme.sandWeak : PRIMETheme.sand,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Text(
+                            habit.frequency,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontSize: isSmallScreen ? 11 : 12,
+                              color: PRIMETheme.sandWeak,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '🔥 ${_getHabitStreak(habit)}',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontSize: isSmallScreen ? 11 : 12,
+                              color: Colors.orange,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                // Прогресс-бар
+                if (!todayCompletion)
+                  Container(
+                    width: isSmallScreen ? 40 : 50,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(2),
+                      color: PRIMETheme.line,
+                    ),
+                    child: FractionallySizedBox(
+                      alignment: Alignment.centerLeft,
+                      widthFactor: progressValue,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(2),
+                          color: habitColor,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Карточка задачи с API данными
+  Widget _buildTaskCard({
+    required BuildContext context,
+    required ApiTask task,
+    required bool isSmallScreen,
+    required VoidCallback onTap,
+  }) {
+    final priorityColor = _getPriorityColor(task.priority);
     
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Задача дня начата! Удачи!'),
-        backgroundColor: PRIMETheme.success,
-        duration: Duration(seconds: 3),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: EdgeInsets.all(isSmallScreen ? 10 : 12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: task.isCompleted ? PRIMETheme.success : PRIMETheme.line,
+                width: task.isCompleted ? 2 : 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: Icon(
+                    task.isCompleted ? Icons.check_circle : Icons.circle_outlined,
+                    color: task.isCompleted ? PRIMETheme.success : PRIMETheme.sandWeak,
+                    size: isSmallScreen ? 20 : 24,
+                    key: ValueKey(task.isCompleted),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Icon(
+                  _getTaskIcon(task.category),
+                  color: priorityColor,
+                  size: isSmallScreen ? 18 : 20,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        task.title,
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontSize: isSmallScreen ? 14 : 16,
+                          decoration: task.isCompleted ? TextDecoration.lineThrough : null,
+                          color: task.isCompleted ? PRIMETheme.sandWeak : PRIMETheme.sand,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: priorityColor.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              task.priority.toUpperCase(),
+                              style: TextStyle(
+                                fontSize: isSmallScreen ? 8 : 9,
+                                color: priorityColor,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          if (task.dueDate != null) ...[
+                            const SizedBox(width: 8),
+                            Text(
+                              _formatDueDate(task.dueDate!),
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                fontSize: isSmallScreen ? 11 : 12,
+                                color: PRIMETheme.sandWeak,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
-
-    // Через 3 секунды сбросить состояние для демо
-    Timer(const Duration(seconds: 3), () {
-      if (mounted) {
-        setState(() {
-          isTaskStarted = false;
-        });
-      }
-    });
   }
 
-  // Показать детали стрика
-  void _showStreakDetails() {
+  // Вспомогательные методы
+  Color _getHabitColor(String category) {
+    switch (category.toLowerCase()) {
+      case 'health':
+      case 'здоровье':
+        return Colors.green;
+      case 'fitness':
+      case 'фитнес':
+        return Colors.orange;
+      case 'mindfulness':
+      case 'разум':
+        return Colors.purple;
+      case 'learning':
+      case 'обучение':
+        return Colors.blue;
+      default:
+        return PRIMETheme.primary;
+    }
+  }
+
+  IconData _getHabitIcon(String category) {
+    switch (category.toLowerCase()) {
+      case 'health':
+      case 'здоровье':
+        return Icons.favorite;
+      case 'fitness':
+      case 'фитнес':
+        return Icons.fitness_center;
+      case 'mindfulness':
+      case 'разум':
+        return Icons.self_improvement;
+      case 'learning':
+      case 'обучение':
+        return Icons.book;
+      default:
+        return Icons.task_alt;
+    }
+  }
+
+  IconData _getTaskIcon(String? category) {
+    switch (category?.toLowerCase()) {
+      case 'work':
+      case 'работа':
+        return Icons.work;
+      case 'personal':
+      case 'личное':
+        return Icons.person;
+      case 'shopping':
+      case 'покупки':
+        return Icons.shopping_cart;
+      case 'health':
+      case 'здоровье':
+        return Icons.health_and_safety;
+      default:
+        return Icons.task;
+    }
+  }
+
+  int _getHabitStreak(ApiHabit habit) {
+    // Простой расчет стрика - количество выполнений за последние дни
+    final now = DateTime.now();
+    int streak = 0;
+    
+    for (int i = 0; i < 30; i++) {
+      final checkDate = now.subtract(Duration(days: i));
+      final hasCompletion = habit.completions.any((c) => 
+        c.date.day == checkDate.day &&
+        c.date.month == checkDate.month &&
+        c.date.year == checkDate.year
+      );
+      
+      if (hasCompletion) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    
+    return streak;
+  }
+
+  Color _getPriorityColor(String priority) {
+    switch (priority.toLowerCase()) {
+      case 'high':
+      case 'высокий':
+        return PRIMETheme.warn;
+      case 'medium':
+      case 'средний':
+        return PRIMETheme.primary;
+      case 'low':
+      case 'низкий':
+        return PRIMETheme.success;
+      default:
+        return PRIMETheme.sandWeak;
+    }
+  }
+
+  String _formatDueDate(DateTime dueDate) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final taskDate = DateTime(dueDate.year, dueDate.month, dueDate.day);
+    
+    final difference = taskDate.difference(today).inDays;
+    
+    if (difference == 0) {
+      return 'сегодня';
+    } else if (difference == 1) {
+      return 'завтра';
+    } else if (difference == -1) {
+      return 'вчера';
+    } else if (difference > 1) {
+      return 'через $difference дн.';
+    } else {
+      return '${-difference} дн. назад';
+    }
+  }
+
+  void _toggleHabit(String habitId) async {
+    try {
+      await ref.read(pathPageControllerProvider.notifier).toggleHabit(habitId);
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Привычка обновлена! 🎉'),
+          backgroundColor: PRIMETheme.success,
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Ошибка обновления привычки: $e'),
+          backgroundColor: PRIMETheme.warn,
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
+    }
+  }
+
+  void _toggleTask(String taskId) async {
+    try {
+      await ref.read(pathPageControllerProvider.notifier).toggleTask(taskId);
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Задача обновлена! ⚡'),
+          backgroundColor: PRIMETheme.success,
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Ошибка обновления задачи: $e'),
+          backgroundColor: PRIMETheme.warn,
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
+    }
+  }
+
+  void _showStreakDetails(BuildContext context, Map<String, dynamic> userMetrics) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Theme.of(context).cardColor,
-        title: const Text('Стрик', style: TextStyle(color: PRIMETheme.sand)),
-        content: const Column(
+        title: const Text('🔥 Стрик детали', style: TextStyle(color: PRIMETheme.sand)),
+        content: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Текущий стрик: 12 дней', style: TextStyle(color: PRIMETheme.sandWeak)),
-            SizedBox(height: 8),
-            Text('Лучший стрик: 25 дней', style: TextStyle(color: PRIMETheme.sandWeak)),
-            SizedBox(height: 8),
-            Text('До следующей награды: 3 дня', style: TextStyle(color: PRIMETheme.sandWeak)),
-            SizedBox(height: 16),
+            Text('Текущий стрик: ${userMetrics['streak'] ?? 0} дней', 
+                 style: const TextStyle(color: PRIMETheme.sandWeak)),
+            const SizedBox(height: 8),
+            Text('Всего очков: ${userMetrics['totalPoints'] ?? 0}', 
+                 style: const TextStyle(color: PRIMETheme.sandWeak)),
+            const SizedBox(height: 8),
+            Text('Ранг: ${userMetrics['currentRank'] ?? 'НОВИЧОК'}', 
+                 style: const TextStyle(color: PRIMETheme.sandWeak)),
+            const SizedBox(height: 16),
             LinearProgressIndicator(
-              value: 0.8,
+              value: (userMetrics['streak'] ?? 0) / 30.0,
               backgroundColor: PRIMETheme.line,
               valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
             ),
@@ -260,60 +1143,33 @@ class _PathPageState extends State<PathPage> {
     );
   }
 
-  // Показать детали прогресса
-  void _showProgressDetails() {
+  void _showPointsDetails(BuildContext context, Map<String, dynamic> userMetrics) {
+    final currentPoints = userMetrics['totalPoints'] ?? 0;
+    final nextLevelPoints = userMetrics['nextLevelPoints'] ?? 100;
+    final progress = currentPoints / nextLevelPoints;
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Theme.of(context).cardColor,
-        title: const Text('Общий прогресс', style: TextStyle(color: PRIMETheme.sand)),
-        content: const Column(
+        title: const Text('⭐ Очки и уровень', style: TextStyle(color: PRIMETheme.sand)),
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Общий прогресс: 67%', style: TextStyle(color: PRIMETheme.sandWeak, fontSize: 16, fontWeight: FontWeight.bold)),
-            SizedBox(height: 16),
-            Text('Прогресс по сферам:', style: TextStyle(color: PRIMETheme.sand, fontSize: 14)),
-            SizedBox(height: 12),
-            _SphereProgressItem(title: '💪 ТЕЛО', progress: 0.85),
-            _SphereProgressItem(title: '🔥 ВОЛЯ', progress: 0.45),
-            _SphereProgressItem(title: '🎯 ФОКУС', progress: 0.70),
-            _SphereProgressItem(title: '🧠 РАЗУМ', progress: 0.55),
-            _SphereProgressItem(title: '🧘 СПОКОЙСТВИЕ', progress: 0.80),
-            _SphereProgressItem(title: '💰 ДЕНЬГИ', progress: 0.30),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('ОК', style: TextStyle(color: PRIMETheme.primary)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Показать детали недели
-  void _showWeekDetails() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Theme.of(context).cardColor,
-        title: const Text('Прогресс недели', style: TextStyle(color: PRIMETheme.sand)),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Выполнено: 73%', style: TextStyle(color: PRIMETheme.sandWeak)),
-            SizedBox(height: 8),
-            Text('Привычки: 22/30', style: TextStyle(color: PRIMETheme.sandWeak)),
-            Text('Задачи: 15/20', style: TextStyle(color: PRIMETheme.sandWeak)),
-            Text('Фокус-сессии: 8/10', style: TextStyle(color: PRIMETheme.sandWeak)),
-            SizedBox(height: 16),
+            Text('Текущие очки: $currentPoints', 
+                 style: const TextStyle(color: PRIMETheme.sandWeak)),
+            const SizedBox(height: 8),
+            Text('Ранг: ${userMetrics['currentRank'] ?? 'НОВИЧОК'}', 
+                 style: const TextStyle(color: PRIMETheme.sandWeak)),
+            const SizedBox(height: 8),
+            Text('До следующего уровня: ${nextLevelPoints - currentPoints} очков', 
+                 style: const TextStyle(color: PRIMETheme.sandWeak)),
+            const SizedBox(height: 16),
             LinearProgressIndicator(
-              value: 0.73,
+              value: progress.clamp(0.0, 1.0),
               backgroundColor: PRIMETheme.line,
-              valueColor: AlwaysStoppedAnimation<Color>(PRIMETheme.sand),
+              valueColor: AlwaysStoppedAnimation<Color>(PRIMETheme.primary),
             ),
           ],
         ),
@@ -327,896 +1183,109 @@ class _PathPageState extends State<PathPage> {
     );
   }
 
-  void _showHabitModal(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _HabitModal(),
-    );
-  }
-
-  void _showTaskModal(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _TaskModal(),
-    );
-  }
-
-  void _showFocusTimeSelector(BuildContext context) {
+  void _showFocusTimer(BuildContext context) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) => _FocusTimeSelector(),
-    );
-  }
-}
-
-// Виджет элемента прогресса сферы
-class _SphereProgressItem extends StatelessWidget {
-  final String title;
-  final double progress;
-
-  const _SphereProgressItem({
-    required this.title,
-    required this.progress,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  color: PRIMETheme.sandWeak,
-                  fontSize: 12,
-                ),
-              ),
-              Text(
-                '${(progress * 100).toInt()}%',
-                style: const TextStyle(
-                  color: PRIMETheme.sandWeak,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          LinearProgressIndicator(
-            value: progress,
-            backgroundColor: PRIMETheme.line,
-            valueColor: AlwaysStoppedAnimation<Color>(
-              _getProgressColor(progress),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Получить цвет прогресс-бара в зависимости от прогресса
-  Color _getProgressColor(double progress) {
-    if (progress >= 0.8) return PRIMETheme.success;
-    if (progress >= 0.6) return Colors.lightGreen;
-    if (progress >= 0.4) return Colors.orange;
-    return Colors.red;
-  }
-}
-
-class _MetricCard extends StatelessWidget {
-  final String title;
-  final String value;
-  final IconData icon;
-  final VoidCallback? onTap;
-
-  const _MetricCard({
-    required this.title,
-    required this.value,
-    required this.icon,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(16),
+      builder: (context) => Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(12),
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: PRIMETheme.line),
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Row(
-              children: [
-                Icon(icon, color: PRIMETheme.sand, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const Spacer(),
-                if (onTap != null)
-                  const Icon(Icons.info_outline, color: PRIMETheme.sandWeak, size: 16),
-              ],
-            ),
-            const SizedBox(height: 8),
             Text(
-              value,
-              style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                fontSize: 32,
-                color: PRIMETheme.sand,
-              ),
+              'Выберите время фокуса',
+              style: Theme.of(context).textTheme.titleLarge,
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TaskCard extends StatelessWidget {
-  final bool isStarted;
-  final VoidCallback onStart;
-
-  const _TaskCard({
-    required this.isStarted,
-    required this.onStart,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: PRIMETheme.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Задача дня',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Завершить презентацию для клиента и отправить на ревью',
-            style: Theme.of(context).textTheme.bodyLarge,
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: isStarted ? null : onStart,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: isStarted ? PRIMETheme.success : PRIMETheme.primary,
-                foregroundColor: PRIMETheme.sand,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: Text(isStarted ? 'В процессе...' : 'Старт'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HabitsList extends StatelessWidget {
-  final List<Map<String, dynamic>> habits;
-  final Function(int) onHabitToggle;
-
-  const _HabitsList({
-    required this.habits,
-    required this.onHabitToggle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: habits.asMap().entries.map((entry) {
-        final index = entry.key;
-        final habit = entry.value;
-        
-        return Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () => onHabitToggle(index),
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: habit['done'] ? PRIMETheme.success : PRIMETheme.line,
-                    width: habit['done'] ? 2 : 1,
+            const SizedBox(height: 20),
+            ...[15, 25, 45, 60].map((minutes) => Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 12),
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Фокус-сессия $minutes минут запущена!'),
+                      backgroundColor: PRIMETheme.success,
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).cardColor,
+                  foregroundColor: PRIMETheme.sand,
+                  side: const BorderSide(color: PRIMETheme.line),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
-                child: Row(
-                  children: [
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      child: Icon(
-                        habit['done'] as bool ? Icons.check_circle : Icons.circle_outlined,
-                        color: habit['done'] as bool ? PRIMETheme.success : PRIMETheme.sandWeak,
-                        key: ValueKey(habit['done']),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            habit['name'] as String,
-                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              decoration: habit['done'] ? TextDecoration.lineThrough : null,
-                              color: habit['done'] ? PRIMETheme.sandWeak : PRIMETheme.sand,
-                            ),
-                          ),
-                          Text(
-                            habit['progress'] as String,
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Icon(
-                      Icons.touch_app,
-                      color: PRIMETheme.sandWeak,
-                      size: 16,
-                    ),
-                  ],
+                child: Text(
+                  '$minutes минут',
+                  style: const TextStyle(fontSize: 18),
                 ),
               ),
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-}
-
-class _WeekProgress extends StatelessWidget {
-  final VoidCallback? onTap;
-
-  const _WeekProgress({this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: PRIMETheme.line),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(
-                  'Прогресс недели',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const Spacer(),
-                if (onTap != null)
-                  const Icon(Icons.info_outline, color: PRIMETheme.sandWeak, size: 16),
-              ],
-            ),
+            )),
             const SizedBox(height: 12),
-            const LinearProgressIndicator(
-              value: 0.73,
-              backgroundColor: PRIMETheme.line,
-              valueColor: AlwaysStoppedAnimation<Color>(PRIMETheme.sand),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '73% выполнено',
-              style: Theme.of(context).textTheme.bodyMedium,
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                'Отмена',
+                style: TextStyle(color: PRIMETheme.sandWeak),
+              ),
             ),
           ],
         ),
       ),
     );
   }
-}
 
-class _ActionButton extends StatelessWidget {
-  final String text;
-  final VoidCallback onTap;
-  final bool isPrimary;
-
-  const _ActionButton({
-    required this.text,
-    required this.onTap,
-    this.isPrimary = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        onPressed: onTap,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: isPrimary ? PRIMETheme.primary : Theme.of(context).cardColor,
-          foregroundColor: PRIMETheme.sand,
-          side: isPrimary ? null : const BorderSide(color: PRIMETheme.line),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 16),
-        ),
-        child: Text(text),
-      ),
-    );
-  }
-}
-
-// Модалка выбора времени для фокуса
-class _FocusTimeSelector extends StatelessWidget {
-  final List<int> timeOptions = [15, 25, 45, 60];
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: PRIMETheme.line),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'Выберите время фокуса',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 20),
-          ...timeOptions.map((minutes) => Container(
-            width: double.infinity,
-            margin: const EdgeInsets.only(bottom: 12),
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => FocusTimerPage(minutes: minutes),
-                  ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).cardColor,
-                foregroundColor: PRIMETheme.sand,
-                side: const BorderSide(color: PRIMETheme.line),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
-              child: Text(
-                '$minutes минут',
-                style: const TextStyle(fontSize: 18),
-              ),
-            ),
-          )),
-          const SizedBox(height: 12),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Отмена',
-              style: TextStyle(color: PRIMETheme.sandWeak),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// Модалка добавления привычки
-class _HabitModal extends StatefulWidget {
-  @override
-  State<_HabitModal> createState() => _HabitModalState();
-}
-
-class _HabitModalState extends State<_HabitModal> {
-  final _nameController = TextEditingController();
-  String _frequency = 'Ежедневно';
-  final List<String> _frequencies = ['Ежедневно', 'Еженедельно', '3 раза в неделю', '2 раза в неделю'];
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: PRIMETheme.line),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Новая привычка',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 20),
-          
-          TextField(
-            controller: _nameController,
-            style: const TextStyle(color: PRIMETheme.sand),
-            decoration: InputDecoration(
-              labelText: 'Название привычки',
-              labelStyle: const TextStyle(color: PRIMETheme.sandWeak),
-              border: OutlineInputBorder(
-                borderSide: const BorderSide(color: PRIMETheme.line),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderSide: const BorderSide(color: PRIMETheme.line),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderSide: const BorderSide(color: PRIMETheme.primary),
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          
-          Text(
-            'Частота',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          
-          DropdownButtonFormField<String>(
-            value: _frequency,
-            dropdownColor: Theme.of(context).cardColor,
-            style: const TextStyle(color: PRIMETheme.sand),
-            decoration: InputDecoration(
-              border: OutlineInputBorder(
-                borderSide: const BorderSide(color: PRIMETheme.line),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderSide: const BorderSide(color: PRIMETheme.line),
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            items: _frequencies.map((freq) => DropdownMenuItem(
-              value: freq,
-              child: Text(freq),
-            )).toList(),
-            onChanged: (value) => setState(() => _frequency = value!),
-          ),
-          const SizedBox(height: 20),
-          
-          Row(
-            children: [
-              Expanded(
-                child: TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text(
-                    'Отмена',
-                    style: TextStyle(color: PRIMETheme.sandWeak),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () {
-                    if (_nameController.text.isNotEmpty) {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Привычка "${_nameController.text}" добавлена'),
-                          backgroundColor: PRIMETheme.success,
-                        ),
-                      );
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: PRIMETheme.primary,
-                    foregroundColor: PRIMETheme.sand,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text('Создать'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// Модалка добавления задачи
-class _TaskModal extends StatefulWidget {
-  @override
-  State<_TaskModal> createState() => _TaskModalState();
-}
-
-class _TaskModalState extends State<_TaskModal> {
-  final _titleController = TextEditingController();
-  final _descriptionController = TextEditingController();
-  String _priority = 'Средний';
-  final List<String> _priorities = ['Низкий', 'Средний', 'Высокий'];
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: PRIMETheme.line),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Новая задача',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 20),
-          
-          TextField(
-            controller: _titleController,
-            style: const TextStyle(color: PRIMETheme.sand),
-            decoration: InputDecoration(
-              labelText: 'Название задачи',
-              labelStyle: const TextStyle(color: PRIMETheme.sandWeak),
-              border: OutlineInputBorder(
-                borderSide: const BorderSide(color: PRIMETheme.line),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderSide: const BorderSide(color: PRIMETheme.line),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderSide: const BorderSide(color: PRIMETheme.primary),
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          
-          TextField(
-            controller: _descriptionController,
-            style: const TextStyle(color: PRIMETheme.sand),
-            maxLines: 3,
-            decoration: InputDecoration(
-              labelText: 'Описание (опционально)',
-              labelStyle: const TextStyle(color: PRIMETheme.sandWeak),
-              border: OutlineInputBorder(
-                borderSide: const BorderSide(color: PRIMETheme.line),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderSide: const BorderSide(color: PRIMETheme.line),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderSide: const BorderSide(color: PRIMETheme.primary),
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          
-          Text(
-            'Приоритет',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          
-          DropdownButtonFormField<String>(
-            value: _priority,
-            dropdownColor: Theme.of(context).cardColor,
-            style: const TextStyle(color: PRIMETheme.sand),
-            decoration: InputDecoration(
-              border: OutlineInputBorder(
-                borderSide: const BorderSide(color: PRIMETheme.line),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderSide: const BorderSide(color: PRIMETheme.line),
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            items: _priorities.map((priority) => DropdownMenuItem(
-              value: priority,
-              child: Text(priority),
-            )).toList(),
-            onChanged: (value) => setState(() => _priority = value!),
-          ),
-          const SizedBox(height: 20),
-          
-          Row(
-            children: [
-              Expanded(
-                child: TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text(
-                    'Отмена',
-                    style: TextStyle(color: PRIMETheme.sandWeak),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () {
-                    if (_titleController.text.isNotEmpty) {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Задача "${_titleController.text}" добавлена'),
-                          backgroundColor: PRIMETheme.success,
-                        ),
-                      );
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: PRIMETheme.primary,
-                    foregroundColor: PRIMETheme.sand,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text('Создать'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// Страница таймера фокуса
-class FocusTimerPage extends StatefulWidget {
-  final int minutes;
-
-  const FocusTimerPage({super.key, required this.minutes});
-
-  @override
-  State<FocusTimerPage> createState() => _FocusTimerPageState();
-}
-
-class _FocusTimerPageState extends State<FocusTimerPage> {
-  late int _totalSeconds;
-  late int _remainingSeconds;
-  Timer? _timer;
-  bool _isRunning = false;
-  bool _isPaused = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _totalSeconds = widget.minutes * 60;
-    _remainingSeconds = _totalSeconds;
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  void _startTimer() {
-    setState(() {
-      _isRunning = true;
-      _isPaused = false;
-    });
+  void _showStatsOverview(BuildContext context) {
+    final dailyStats = ref.read(dailyStatsProvider);
+    final totalProgress = (dailyStats['completedHabits'] + dailyStats['completedTasks']) / 
+                         (dailyStats['totalHabits'] + dailyStats['totalTasks']);
     
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() {
-        if (_remainingSeconds > 0) {
-          _remainingSeconds--;
-        } else {
-          _timer?.cancel();
-          _isRunning = false;
-          _showCompletionDialog();
-        }
-      });
-    });
-  }
-
-  void _pauseTimer() {
-    setState(() {
-      _isPaused = true;
-      _isRunning = false;
-    });
-    _timer?.cancel();
-  }
-
-  void _stopTimer() {
-    setState(() {
-      _timer?.cancel();
-      _isRunning = false;
-      _isPaused = false;
-      _remainingSeconds = _totalSeconds;
-    });
-  }
-
-  void _showCompletionDialog() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Theme.of(context).cardColor,
-        title: const Text('Сессия завершена!', style: TextStyle(color: PRIMETheme.sand)),
-        content: const Text('Отличная работа! Фокус сессия завершена.', style: TextStyle(color: PRIMETheme.sandWeak)),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context);
-            },
-            child: const Text('ОК', style: TextStyle(color: PRIMETheme.primary)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatTime(int seconds) {
-    final minutes = seconds ~/ 60;
-    final remainingSeconds = seconds % 60;
-    return '${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final progress = (_totalSeconds - _remainingSeconds) / _totalSeconds;
-    
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        title: Text('Фокус ${widget.minutes} мин', style: const TextStyle(color: PRIMETheme.sand)),
-        iconTheme: const IconThemeData(color: PRIMETheme.sand),
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        title: const Text('📊 Общая статистика', style: TextStyle(color: PRIMETheme.sand)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Круглый прогресс-бар
-            SizedBox(
-              width: 250,
-              height: 250,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  SizedBox(
-                    width: 250,
-                    height: 250,
-                    child: CircularProgressIndicator(
-                      value: progress,
-                      strokeWidth: 12,
-                      backgroundColor: PRIMETheme.line,
-                      valueColor: const AlwaysStoppedAnimation<Color>(PRIMETheme.primary),
-                    ),
-                  ),
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        _formatTime(_remainingSeconds),
-                        style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                          fontSize: 48,
-                          color: PRIMETheme.sand,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        _isPaused ? 'Пауза' : _isRunning ? 'Фокус' : 'Готов',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: PRIMETheme.sandWeak,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 60),
-            
-            // Кнопки управления
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                if (!_isRunning && !_isPaused)
-                  ElevatedButton(
-                    onPressed: _startTimer,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: PRIMETheme.primary,
-                      foregroundColor: PRIMETheme.sand,
-                      shape: const CircleBorder(),
-                      padding: const EdgeInsets.all(20),
-                    ),
-                    child: const Icon(Icons.play_arrow, size: 32),
-                  ),
-                
-                if (_isRunning)
-                  ElevatedButton(
-                    onPressed: _pauseTimer,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: PRIMETheme.warn,
-                      foregroundColor: PRIMETheme.sand,
-                      shape: const CircleBorder(),
-                      padding: const EdgeInsets.all(20),
-                    ),
-                    child: const Icon(Icons.pause, size: 32),
-                  ),
-                
-                if (_isPaused)
-                  ElevatedButton(
-                    onPressed: _startTimer,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: PRIMETheme.primary,
-                      foregroundColor: PRIMETheme.sand,
-                      shape: const CircleBorder(),
-                      padding: const EdgeInsets.all(20),
-                    ),
-                    child: const Icon(Icons.play_arrow, size: 32),
-                  ),
-                
-                ElevatedButton(
-                  onPressed: _stopTimer,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: PRIMETheme.primary,
-                    foregroundColor: PRIMETheme.sand,
-                    shape: const CircleBorder(),
-                    padding: const EdgeInsets.all(20),
-                  ),
-                  child: const Icon(Icons.stop, size: 32),
-                ),
-              ],
+            Text('Сегодня выполнено:', 
+                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                   color: PRIMETheme.sand,
+                 )),
+            const SizedBox(height: 12),
+            Text('• Привычек: ${dailyStats['completedHabits']}/${dailyStats['totalHabits']}', 
+                 style: const TextStyle(color: PRIMETheme.sandWeak)),
+            Text('• Задач: ${dailyStats['completedTasks']}/${dailyStats['totalTasks']}', 
+                 style: const TextStyle(color: PRIMETheme.sandWeak)),
+            Text('• Стрик: ${dailyStats['streak'] ?? 0} дней', 
+                 style: const TextStyle(color: PRIMETheme.sandWeak)),
+            Text('• Очки: ${dailyStats['totalPoints'] ?? 0}', 
+                 style: const TextStyle(color: PRIMETheme.sandWeak)),
+            const SizedBox(height: 16),
+            LinearProgressIndicator(
+              value: totalProgress.isNaN ? 0.0 : totalProgress.clamp(0.0, 1.0),
+              backgroundColor: PRIMETheme.line,
+              valueColor: AlwaysStoppedAnimation<Color>(PRIMETheme.primary),
             ),
           ],
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('ОК', style: TextStyle(color: PRIMETheme.primary)),
+          ),
+        ],
       ),
     );
   }

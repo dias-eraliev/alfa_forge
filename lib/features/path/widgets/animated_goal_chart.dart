@@ -97,7 +97,7 @@ class _AnimatedGoalChartState extends State<AnimatedGoalChart>
 
   Widget _buildEmptyState() {
     return Container(
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -143,7 +143,7 @@ class _AnimatedGoalChartState extends State<AnimatedGoalChart>
       builder: (context, child) {
         return Container(
           padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -223,12 +223,12 @@ class _AnimatedGoalChartState extends State<AnimatedGoalChart>
               final radius = isLastPoint ? 3.0 : 2.0;
               final opacity = isLastPoint ? 1.0 : 0.7;
               
-              return FlDotCirclePainter(
-                radius: radius,
-                color: lineColor.withOpacity(opacity),
-                strokeWidth: isLastPoint ? 2 : 0,
-                strokeColor: PRIMETheme.bg,
-              );
+                      return FlDotCirclePainter(
+                        radius: radius,
+                        color: lineColor.withOpacity(opacity.clamp(0.0, 1.0)),
+                        strokeWidth: isLastPoint ? 2 : 0,
+                        strokeColor: PRIMETheme.bg,
+                      );
             },
           ),
           belowBarData: BarAreaData(
@@ -260,7 +260,7 @@ class _AnimatedGoalChartState extends State<AnimatedGoalChart>
           belowBarData: BarAreaData(show: false),
         ),
       ],
-      lineTouchData: LineTouchData(enabled: false),
+      lineTouchData: const LineTouchData(enabled: false),
     );
   }
 

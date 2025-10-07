@@ -3,13 +3,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vibration/vibration.dart';
 import 'package:audioplayers/audioplayers.dart';
+
 import '../models/exercise_model.dart';
 import '../models/workout_session_model.dart';
-import '../models/mock_ai_detector.dart';
 import 'tts_controller.dart';
 
-// Provider для контроллера тренировки
-final workoutControllerProvider = StateNotifierProvider<WorkoutController, WorkoutState>(
+import '../pose/pose_service.dart';
+import '../pose/pose_models.dart';
+import '../detectors/base_exercise_detector.dart';
+import '../detectors/detector_factory.dart';
+
+/// Provider контроллера тренировки (новый pipeline: PoseService + ExerciseDetectors)
+final workoutControllerProvider =
+    StateNotifierProvider<WorkoutController, WorkoutState>(
   (ref) => WorkoutController(ref),
 );
 
@@ -59,18 +65,34 @@ class WorkoutState {
 
 class WorkoutController extends StateNotifier<WorkoutState> {
   final Ref _ref;
-  
-  MockAIDetector? _aiDetector;
+
+  ExerciseDetector? _detector;
+  late final ProviderSubscription _poseSub;
+
   Timer? _sessionTimer;
   Timer? _motivationTimer;
   final AudioPlayer _audioPlayer = AudioPlayer();
-  
+
   DateTime? _sessionStartTime;
   int _lastRepCount = 0;
   double _totalQualitySum = 0.0;
   int _qualityMeasurements = 0;
 
-  WorkoutController(this._ref) : super(const WorkoutState());
+  WorkoutController(this._ref) : super(const WorkoutState()) {
+    // Подписка на обновления PoseService
+    _poseSub = _ref.listen<PoseServiceState>(
+      poseServiceProvider,
+      (previous, next) {
+        if (state.isDetecting &&
+            !state.isPaused &&
+            _detector != null &&
+            next.lastFrame != null) {
+          _processPoseFrame(next.lastFrame!);
+        }
+      },
+      fireImmediately: false,
+    );
+  }
 
   // Создание быстрой ГТО тренировки (отжимания 10 раз)
   Future<void> createGTOWorkout() async {
@@ -83,7 +105,6 @@ class WorkoutController extends StateNotifier<WorkoutState> {
     await createWorkoutSession(gtoExercises);
   }
 
-  // Создание новой тренировочной сессии
   Future<void> createWorkoutSession(List<ExercisePlan> exercises) async {
     try {
       final session = WorkoutSession(
@@ -98,7 +119,6 @@ class WorkoutController extends StateNotifier<WorkoutState> {
         error: null,
       );
 
-      // Устанавливаем первое упражнение
       if (exercises.isNotEmpty) {
         state = state.copyWith(currentExercise: exercises.first);
       }
@@ -107,7 +127,7 @@ class WorkoutController extends StateNotifier<WorkoutState> {
     }
   }
 
-  // Начать AI детекцию для текущего упражнения
+  /// Запуск детекции (создаем ExerciseDetector и начинаем слушать поток поз)
   Future<void> startAIDetection() async {
     if (state.currentExercise == null) {
       state = state.copyWith(error: 'Упражнение не выбрано');
@@ -115,19 +135,23 @@ class WorkoutController extends StateNotifier<WorkoutState> {
     }
 
     try {
-      // Инициализируем детектор для текущего упражнения
-      _aiDetector?.dispose();
-      _aiDetector = MockAIDetector(
-        exerciseType: state.currentExercise!.exerciseId,
+      // Создаем детектор
+      _detector = ExerciseDetectorFactory.create(
+        state.currentExercise!.exerciseId,
       );
 
-      // Сбрасываем счетчики
+      if (_detector == null) {
+        state = state.copyWith(error: 'Нет детектора для упражнения');
+        return;
+      }
+      _detector!.reset();
+
+      // Сбрасываем накопители
       _lastRepCount = 0;
       _totalQualitySum = 0.0;
       _qualityMeasurements = 0;
       _sessionStartTime = DateTime.now();
 
-      // Обновляем статус сессии
       final updatedSession = state.currentSession?.copyWith(
         status: WorkoutStatus.inProgress,
       );
@@ -139,34 +163,22 @@ class WorkoutController extends StateNotifier<WorkoutState> {
         error: null,
       );
 
-      // Запускаем детекцию
-      _aiDetector!.startDetection(
-        onUpdate: _handleDetectionUpdate,
-      );
-
-      // Запускаем таймер сессии
+      // Таймеры
       _startSessionTimer();
-
-      // Запускаем периодическую мотивацию
       _startMotivationTimer();
 
-      // Голосовое приветствие
-      _ref.read(ttsControllerProvider.notifier).speak(
-        'Начинаем ${state.currentExercise!.exercise?.name}! Готовы?'
-      );
-
-      // Звук старта
+      // Голос/звуки
+      _ref
+          .read(ttsControllerProvider.notifier)
+          .speak('Начинаем ${state.currentExercise!.exercise?.name}! Готовы?');
       _playSound('start');
       _hapticFeedback();
-
     } catch (e) {
       state = state.copyWith(error: 'Ошибка запуска детекции: $e');
     }
   }
 
-  // Остановить детекцию
   void stopDetection() {
-    _aiDetector?.stopDetection();
     _sessionTimer?.cancel();
     _motivationTimer?.cancel();
 
@@ -184,15 +196,13 @@ class WorkoutController extends StateNotifier<WorkoutState> {
     _playSound('pause');
   }
 
-  // Завершить текущее упражнение
   Future<void> completeCurrentExercise() async {
     if (state.currentExercise == null || state.currentSession == null) return;
 
     try {
-      // Обновляем статистику текущего упражнения
-      final averageQuality = _qualityMeasurements > 0 
-        ? _totalQualitySum / _qualityMeasurements 
-        : 0.0;
+      final averageQuality = _qualityMeasurements > 0
+          ? _totalQualitySum / _qualityMeasurements
+          : 0.0;
 
       final completedExercise = state.currentExercise!.copyWith(
         completedReps: state.lastDetection?.repetitionCount ?? 0,
@@ -200,7 +210,6 @@ class WorkoutController extends StateNotifier<WorkoutState> {
         completed: true,
       );
 
-      // Обновляем список упражнений в сессии
       final updatedExercises = state.currentSession!.exercises.map((ex) {
         if (ex.exerciseId == completedExercise.exerciseId) {
           return completedExercise;
@@ -208,23 +217,25 @@ class WorkoutController extends StateNotifier<WorkoutState> {
         return ex;
       }).toList();
 
-      // Находим следующее упражнение
       final currentIndex = updatedExercises.indexOf(completedExercise);
-      final nextExercise = currentIndex + 1 < updatedExercises.length 
-        ? updatedExercises[currentIndex + 1] 
-        : null;
+      final nextExercise = currentIndex + 1 < updatedExercises.length
+          ? updatedExercises[currentIndex + 1]
+          : null;
 
       final totalCompleted = updatedExercises.fold<int>(
-        0, (sum, ex) => sum + ex.completedReps
-      );
+          0, (sum, ex) => sum + ex.completedReps);
 
       final updatedSession = state.currentSession!.copyWith(
         exercises: updatedExercises,
         totalRepsCompleted: totalCompleted,
         averageQuality: updatedExercises.fold<double>(
-          0.0, (sum, ex) => sum + ex.averageQuality
-        ) / updatedExercises.length,
-        status: nextExercise == null ? WorkoutStatus.completed : WorkoutStatus.inProgress,
+              0.0,
+              (sum, ex) => sum + ex.averageQuality,
+            ) /
+            updatedExercises.length,
+        status: nextExercise == null
+            ? WorkoutStatus.completed
+            : WorkoutStatus.inProgress,
         endTime: nextExercise == null ? DateTime.now() : null,
       );
 
@@ -234,50 +245,42 @@ class WorkoutController extends StateNotifier<WorkoutState> {
         isDetecting: false,
       );
 
-      // Останавливаем текущую детекцию
-      _aiDetector?.stopDetection();
-
-      // Голосовая обратная связь
+      // Голос/звуки
       final repsCompleted = completedExercise.completedReps;
       final targetReps = completedExercise.targetReps;
-      
+
       if (repsCompleted >= targetReps) {
         _ref.read(ttsControllerProvider.notifier).speak(
-          'Отлично! ${completedExercise.exercise?.name} выполнено! $repsCompleted повторений!'
-        );
+              'Отлично! ${completedExercise.exercise?.name} выполнено! $repsCompleted повторений!',
+            );
         _playSound('success');
       } else {
         _ref.read(ttsControllerProvider.notifier).speak(
-          'Упражнение завершено. Выполнено $repsCompleted из $targetReps повторений.'
-        );
+              'Упражнение завершено. Выполнено $repsCompleted из $targetReps повторений.',
+            );
         _playSound('complete');
       }
 
       _hapticFeedback();
 
-      // Если есть следующее упражнение, даем небольшую паузу
       if (nextExercise != null) {
         await Future.delayed(const Duration(seconds: 2));
-        _ref.read(ttsControllerProvider.notifier).speak(
-          'Следующее упражнение: ${nextExercise.exercise?.name}'
-        );
+        _ref
+            .read(ttsControllerProvider.notifier)
+            .speak('Следующее упражнение: ${nextExercise.exercise?.name}');
       } else {
-        // Тренировка завершена
         await Future.delayed(const Duration(seconds: 1));
-        _ref.read(ttsControllerProvider.notifier).speak(
-          'Тренировка завершена! Отличная работа!'
-        );
+        _ref
+            .read(ttsControllerProvider.notifier)
+            .speak('Тренировка завершена! Отличная работа!');
         _playSound('workout_complete');
       }
-
     } catch (e) {
       state = state.copyWith(error: 'Ошибка завершения упражнения: $e');
     }
   }
 
-  // Завершить всю тренировку
   void completeWorkout() {
-    _aiDetector?.stopDetection();
     _sessionTimer?.cancel();
     _motivationTimer?.cancel();
 
@@ -293,82 +296,90 @@ class WorkoutController extends StateNotifier<WorkoutState> {
     );
 
     _playSound('workout_complete');
-    _ref.read(ttsControllerProvider.notifier).speak(
-      'Поздравляем с завершением тренировки!'
-    );
+    _ref
+        .read(ttsControllerProvider.notifier)
+        .speak('Поздравляем с завершением тренировки!');
   }
 
-  // Обработка обновлений от AI детектора
-  void _handleDetectionUpdate(AIDetectionResult result) {
-    // Проверяем новые повторения
-    if (result.repetitionCount > _lastRepCount) {
-      _lastRepCount = result.repetitionCount;
-      
-      // Звук засчитанного повторения
-      _playSound('rep_counted');
-      _hapticFeedback();
+  void _processPoseFrame(PoseFrame frame) {
+    if (_detector == null) return;
 
-      // Голосовая обратная связь каждые 5 повторений
-      if (result.repetitionCount % 5 == 0 && result.repetitionCount > 0) {
-        _ref.read(ttsControllerProvider.notifier).speak(
-          '${result.repetitionCount} повторений! ${result.feedback}'
-        );
-      }
-    }
+    // Добавим дебаг информацию
+    print('Processing pose frame with ${frame.points.length} points');
+    
+    final output = _detector!.update(frame);
+    
+    print('Detector output: reps=${output.totalReps}, score=${output.formScore}, phase=${output.phase.name}');
 
-    // Накапливаем статистику качества
-    _totalQualitySum += result.qualityPercentage;
-    _qualityMeasurements++;
+    // Конвертация в старый AIDetectionResult (для совместимости UI)
+    final result = AIDetectionResult(
+      isGoodForm: output.formScore >= 75,
+      isAverageForm: output.formScore >= 50 && output.formScore < 75,
+      qualityPercentage: output.formScore.round(),
+      feedback: output.feedback,
+      phase: output.phase.name,
+      repetitionCount: output.totalReps,
+    );
 
-    state = state.copyWith(lastDetection: result);
+    _handleDetectionUpdate(result);
 
-    // Автоматическое завершение при достижении цели
-    if (state.currentExercise != null && 
-        result.repetitionCount >= state.currentExercise!.targetReps) {
-      Future.delayed(const Duration(seconds: 1), () {
+    // Автозавершение если достигли цели
+    final target = state.currentExercise?.targetReps;
+    if (target != null && output.totalReps >= target && state.isDetecting) {
+      Future.delayed(const Duration(milliseconds: 600), () {
         completeCurrentExercise();
       });
     }
   }
 
-  // Запуск таймера сессии
+  void _handleDetectionUpdate(AIDetectionResult result) {
+    if (result.repetitionCount > _lastRepCount) {
+      _lastRepCount = result.repetitionCount;
+      _playSound('rep_counted');
+      _hapticFeedback();
+
+      if (result.repetitionCount % 5 == 0 && result.repetitionCount > 0) {
+        _ref
+            .read(ttsControllerProvider.notifier)
+            .speak('${result.repetitionCount} повторений! ${result.feedback}');
+      }
+    }
+
+    _totalQualitySum += result.qualityPercentage;
+    _qualityMeasurements++;
+
+    state = state.copyWith(lastDetection: result);
+  }
+
   void _startSessionTimer() {
     _sessionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_sessionStartTime != null) {
-        final duration = DateTime.now().difference(_sessionStartTime!);
-        state = state.copyWith(sessionDuration: duration);
+        state = state.copyWith(
+          sessionDuration: DateTime.now().difference(_sessionStartTime!),
+        );
       }
     });
   }
 
-  // Мотивационные сообщения
   void _startMotivationTimer() {
-    _motivationTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    _motivationTimer =
+        Timer.periodic(const Duration(seconds: 30), (timer) {
       if (state.isDetecting && !state.isPaused) {
-        final motivationalPhrases = [
+        final phrases = [
           'Продолжайте! Вы отлично справляетесь!',
-          'Держите темп! Еще немного!',
-          'Отличная работа! Не сдавайтесь!',
-          'Вы сильнее чем вчера!',
+            'Держите темп! Еще немного!',
+            'Отличная работа! Не сдавайтесь!',
+            'Вы сильнее чем вчера!',
         ];
-        
-        final phrase = motivationalPhrases[
-          DateTime.now().millisecond % motivationalPhrases.length
-        ];
-        
+        final phrase = phrases[DateTime.now().millisecond % phrases.length];
         _ref.read(ttsControllerProvider.notifier).speak(phrase);
       }
     });
   }
 
-  // Звуковые эффекты (пока отключены, чтобы избежать ошибок с отсутствующими файлами)
   void _playSound(String soundType) async {
     try {
-      // Пока что используем только вибрацию вместо звуков
-      // В будущих версиях здесь можно добавить звуковые файлы
       debugPrint('Sound event: $soundType');
-      
-      // Дополнительная вибрация для важных событий
       switch (soundType) {
         case 'start':
         case 'success':
@@ -381,7 +392,6 @@ class WorkoutController extends StateNotifier<WorkoutState> {
           _hapticFeedback();
           break;
         default:
-          // Для других событий просто логируем
           break;
       }
     } catch (e) {
@@ -389,7 +399,6 @@ class WorkoutController extends StateNotifier<WorkoutState> {
     }
   }
 
-  // Тактильная обратная связь
   void _hapticFeedback() async {
     try {
       if (await Vibration.hasVibrator() ?? false) {
@@ -400,39 +409,30 @@ class WorkoutController extends StateNotifier<WorkoutState> {
     }
   }
 
-  // Переключение на следующее упражнение
   void switchToNextExercise() {
     if (state.currentSession == null) return;
-
-    final currentExercises = state.currentSession!.exercises;
-    final currentIndex = state.currentExercise != null 
-      ? currentExercises.indexOf(state.currentExercise!) 
-      : -1;
-
-    if (currentIndex + 1 < currentExercises.length) {
-      state = state.copyWith(
-        currentExercise: currentExercises[currentIndex + 1],
-      );
+    final list = state.currentSession!.exercises;
+    final idx =
+        state.currentExercise != null ? list.indexOf(state.currentExercise!) : -1;
+    if (idx + 1 < list.length) {
+      state = state.copyWith(currentExercise: list[idx + 1]);
     }
   }
 
-  // Сброс тренировки
   void resetWorkout() {
-    _aiDetector?.dispose();
     _sessionTimer?.cancel();
     _motivationTimer?.cancel();
-    _aiDetector = null;
+    _detector = null;
     _sessionStartTime = null;
-
     state = const WorkoutState();
   }
 
   @override
   void dispose() {
-    _aiDetector?.dispose();
     _sessionTimer?.cancel();
     _motivationTimer?.cancel();
     _audioPlayer.dispose();
+    _poseSub.close();
     super.dispose();
   }
 }

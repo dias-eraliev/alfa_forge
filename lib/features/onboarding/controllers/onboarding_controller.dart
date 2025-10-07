@@ -3,6 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/onboarding_data.dart';
 import '../models/habit_model.dart';
 import '../models/development_sphere_model.dart';
+import '../../../core/services/onboarding_service.dart';
+import '../../../core/services/auth_service.dart';
 
 class OnboardingController extends ChangeNotifier {
   static const String _keyOnboardingData = 'onboarding_data';
@@ -14,6 +16,11 @@ class OnboardingController extends ChangeNotifier {
   // Состояние для выбора сфер
   final List<DevelopmentSphere> _selectedSpheres = [];
   bool _isInHabitSelectionMode = false;
+  
+  // Фильтры и пагинация привычек
+  final List<String> _activeSphereFilters = [];
+  static const int _habitPageSize = 24;
+  int _visibleHabitsLimit = _habitPageSize;
 
   OnboardingData get data => _data;
   bool get isLoading => _isLoading;
@@ -33,6 +40,35 @@ class OnboardingController extends ChangeNotifier {
   List<HabitModel> get availableHabits => DevelopmentSpheresData.getHabitsForSpheres(
     _selectedSpheres.map((sphere) => sphere.id).toList()
   );
+  
+  // Активные фильтры (ids сфер). Если пусто -> показываем все выбранные сферы.
+  List<String> get activeSphereFilters => _activeSphereFilters;
+  
+  // Отфильтрованный и ограниченный список
+  List<HabitModel> get filteredHabits {
+    final base = availableHabits;
+    final filtered = _activeSphereFilters.isEmpty
+        ? base
+        : base.where((h) {
+            // находим сферу по наличию id в списке (поиск среди _selectedSpheres)
+            return _selectedSpheres.any((s) =>
+                _activeSphereFilters.contains(s.id) &&
+                s.habits.contains(h));
+          }).toList();
+    if (filtered.length <= _visibleHabitsLimit) return filtered;
+    return filtered.sublist(0, _visibleHabitsLimit);
+  }
+  
+  bool get canShowMoreHabits {
+    final baseCount = _activeSphereFilters.isEmpty
+        ? availableHabits.length
+        : availableHabits.where((h) {
+            return _selectedSpheres.any((s) =>
+                _activeSphereFilters.contains(s.id) &&
+                s.habits.contains(h));
+          }).length;
+    return _visibleHabitsLimit < baseCount;
+  }
 
   // Валидация для каждого шага
   bool get isProfileValid => _data.fullName != null && 
@@ -114,7 +150,12 @@ class OnboardingController extends ChangeNotifier {
   void enterHabitSelectionMode() {
     if (_selectedSpheres.length >= 2) {
       _isInHabitSelectionMode = true;
-      // Очищаем выбранные привычки при переходе в режим выбора привычек
+      // Инициализируем фильтры выбранными сферами
+      _activeSphereFilters
+        ..clear()
+        ..addAll(_selectedSpheres.map((e) => e.id));
+      _visibleHabitsLimit = _habitPageSize;
+      // Сбрасываем выбранные привычки (начинаем с нуля)
       _data = _data.copyWith(selectedHabits: []);
       notifyListeners();
     }
@@ -138,6 +179,28 @@ class OnboardingController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // Сначала обновляем профиль на backend
+      final onboardingService = OnboardingService();
+      
+      // Обновляем профиль пользователя
+      final profileResponse = await onboardingService.updateProfile(
+        fullName: _data.fullName,
+        phone: _data.phone,
+        city: _data.city,
+      );
+      
+      if (!profileResponse.isSuccess) {
+        throw Exception('Failed to update profile: ${profileResponse.error}');
+      }
+      
+      // Завершаем онбординг на backend
+      final completeResponse = await onboardingService.completeOnboarding();
+      
+      if (!completeResponse.isSuccess) {
+        throw Exception('Failed to complete onboarding: ${completeResponse.error}');
+      }
+      
+      // Обновляем локальные данные
       _data = _data.copyWith(isCompleted: true);
       await _saveData();
       
@@ -146,8 +209,11 @@ class OnboardingController extends ChangeNotifier {
       await prefs.setBool(_keyOnboardingCompleted, true);
       await prefs.setBool('onboarding_completed', true);
       
+      debugPrint('✅ Onboarding completed successfully');
+      
     } catch (e) {
-      debugPrint('Error completing onboarding: $e');
+      debugPrint('❌ Error completing onboarding: $e');
+      // Не обновляем локальное состояние если backend запрос не удался
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -196,17 +262,68 @@ class OnboardingController extends ChangeNotifier {
     
     notifyListeners();
   }
-
+  
+  // ------- Новые методы для фильтрации / пагинации привычек -------
+  void toggleSphereFilter(String sphereId) {
+    if (_activeSphereFilters.contains(sphereId)) {
+      _activeSphereFilters.remove(sphereId);
+    } else {
+      _activeSphereFilters.add(sphereId);
+    }
+    _visibleHabitsLimit = _habitPageSize; // сбрасываем пагинацию при смене фильтра
+    notifyListeners();
+  }
+  
+  void clearSphereFilters() {
+    _activeSphereFilters.clear();
+    _visibleHabitsLimit = _habitPageSize;
+    notifyListeners();
+  }
+  
+  void showMoreHabits() {
+    _visibleHabitsLimit += _habitPageSize;
+    notifyListeners();
+  }
+  // ---------------------------------------------------------------
+  
   // Статический метод для проверки завершения онбординга
   static Future<bool> isOnboardingCompleted() async {
     try {
+      // Если пользователь авторизован, проверяем статус на backend
+      final authService = AuthService();
+      if (authService.isAuthenticated) {
+        try {
+          final onboardingService = OnboardingService();
+          final response = await onboardingService.getCurrentProfile();
+          
+          if (response.isSuccess && response.data != null) {
+            final user = response.data!;
+            final isCompleted = user.profile?.onboardingCompleted ?? false;
+            
+            // Синхронизируем с локальным хранилищем
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setBool(_keyOnboardingCompleted, isCompleted);
+            await prefs.setBool('onboarding_completed', isCompleted);
+            
+            debugPrint('📋 Backend onboarding status: $isCompleted');
+            return isCompleted;
+          }
+        } catch (e) {
+          debugPrint('⚠️ Failed to check backend onboarding status: $e');
+          // Fallback к локальному хранилищу при ошибке API
+        }
+      }
+      
+      // Fallback: проверяем локальное хранилище
       final prefs = await SharedPreferences.getInstance();
-      // Проверяем оба ключа для совместимости
-      return prefs.getBool(_keyOnboardingCompleted) ?? 
-             prefs.getBool('onboarding_completed') ?? 
-             false;
+      final localStatus = prefs.getBool(_keyOnboardingCompleted) ?? 
+                         prefs.getBool('onboarding_completed') ?? 
+                         false;
+      debugPrint('📋 Local onboarding status: $localStatus');
+      return localStatus;
+      
     } catch (e) {
-      debugPrint('Error checking onboarding completion: $e');
+      debugPrint('❌ Error checking onboarding completion: $e');
       return false;
     }
   }

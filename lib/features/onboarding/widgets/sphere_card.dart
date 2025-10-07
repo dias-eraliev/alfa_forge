@@ -88,7 +88,8 @@ class _SphereCardState extends State<SphereCard>
 
   Color _getBackgroundColor() {
     if (widget.isSelected) {
-      return PRIMETheme.primary.withOpacity(0.15);
+      // Более минималистичный фон выделения
+      return PRIMETheme.primary.withOpacity(0.08);
     }
     return PRIMETheme.bg;
   }
@@ -102,27 +103,22 @@ class _SphereCardState extends State<SphereCard>
 
   List<BoxShadow> _getBoxShadow() {
     if (widget.isSelected) {
+      // Упрощенный минималистичный glow
       return [
         BoxShadow(
-          color: PRIMETheme.primary.withOpacity(0.3 * _glowAnimation.value),
-          blurRadius: 20 * _glowAnimation.value,
-          spreadRadius: 5 * _glowAnimation.value,
-          offset: const Offset(0, 8),
-        ),
-        BoxShadow(
-          color: PRIMETheme.primary.withOpacity(0.2 * _glowAnimation.value),
-          blurRadius: 40 * _glowAnimation.value,
-          spreadRadius: 10 * _glowAnimation.value,
-          offset: const Offset(0, 16),
+          color: PRIMETheme.primary.withOpacity(0.18 * _glowAnimation.value),
+          blurRadius: 10 * _glowAnimation.value,
+          spreadRadius: 2 * _glowAnimation.value,
+          offset: const Offset(0, 6),
         ),
       ];
     }
     return [
       BoxShadow(
-        color: PRIMETheme.bg.withOpacity(0.1),
-        blurRadius: 8,
-        spreadRadius: 1,
-        offset: const Offset(0, 4),
+        color: PRIMETheme.bg.withOpacity(0.06),
+        blurRadius: 6,
+        spreadRadius: 0.5,
+        offset: const Offset(0, 3),
       ),
     ];
   }
@@ -179,20 +175,15 @@ class _SphereCardState extends State<SphereCard>
                   padding: const EdgeInsets.all(12),
                   decoration: widget.isSelected
                       ? BoxDecoration(
-                          color: PRIMETheme.primary.withOpacity(0.1),
+                          color: PRIMETheme.primary.withOpacity(0.06),
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: PRIMETheme.primary.withOpacity(0.3),
+                            color: PRIMETheme.primary.withOpacity(0.25),
                             width: 1,
                           ),
                         )
                       : null,
-                  child: Text(
-                    widget.sphere.icon,
-                    style: TextStyle(
-                      fontSize: isSmallScreen ? 36 : 42,
-                    ),
-                  ),
+                  child: _buildIcon(isSmallScreen),
                 ),
                 
                 SizedBox(height: isSmallScreen ? 8 : 12),
@@ -233,6 +224,23 @@ class _SphereCardState extends State<SphereCard>
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildIcon(bool isSmallScreen) {
+    const Map<String, IconData> iconMap = {
+      'body': Icons.fitness_center,          // ТЕЛО
+      'will': Icons.flash_on,                // ВОЛЯ
+      'focus': Icons.center_focus_strong,    // ФОКУС
+      'mind': Icons.psychology,              // РАЗУМ
+      'peace': Icons.self_improvement,       // СПОКОЙСТВИЕ
+      'money': Icons.account_balance_wallet, // ДЕНЬГИ
+    };
+    final iconData = iconMap[widget.sphere.id] ?? Icons.circle;
+    return Icon(
+      iconData,
+      size: isSmallScreen ? 36 : 42,
+      color: widget.isSelected ? PRIMETheme.primary : PRIMETheme.sand,
     );
   }
 }

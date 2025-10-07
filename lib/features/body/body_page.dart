@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import '../shared/bottom_nav_scaffold.dart';
 import '../../app/theme.dart';
+import 'widgets/advanced_add_measurement_dialog.dart';
+import 'widgets/measurement_history_dialog.dart';
+import 'widgets/advanced_health_goals_dialog.dart';
+import 'models/measurement_model.dart';
+import 'models/health_goal_model.dart';
 
 class BodyPage extends StatefulWidget {
   const BodyPage({super.key});
@@ -47,6 +52,9 @@ class _BodyPageState extends State<BodyPage> with TickerProviderStateMixin {
     'steps': {'current': 8247, 'target': 10000},
     'water': {'current': 2.1, 'target': 3.0},
   };
+
+  // Цели здоровья
+  List<HealthGoal> _healthGoals = [];
 
   @override
   void initState() {
@@ -175,8 +183,8 @@ class _BodyPageState extends State<BodyPage> with TickerProviderStateMixin {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) => _AddMeasurementSheet(
-        onMeasurementAdded: (measurements) {
+      builder: (context) => AdvancedAddMeasurementDialog(
+        onMeasurementsAdded: (measurements) {
           setState(() {
             bodyMeasurements.addAll(measurements);
             // Обновляем основные показатели если есть вес
@@ -200,7 +208,7 @@ class _BodyPageState extends State<BodyPage> with TickerProviderStateMixin {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) => _HistorySheet(healthData: healthData),
+      builder: (context) => const MeasurementHistoryDialog(),
     );
   }
 
@@ -209,16 +217,16 @@ class _BodyPageState extends State<BodyPage> with TickerProviderStateMixin {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) => _GoalsSheet(
-        goals: goals,
-        onGoalsUpdated: (newGoals) {
+      builder: (context) => AdvancedHealthGoalsDialog(
+        existingGoals: _healthGoals,
+        onGoalsUpdated: (updatedGoals) {
           setState(() {
-            goals.addAll(newGoals);
+            _healthGoals = updatedGoals;
           });
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Цели обновлены! 🎯'),
-              backgroundColor: PRIMETheme.primary,
+              content: Text('Цели здоровья обновлены! 🎯'),
+              backgroundColor: PRIMETheme.success,
             ),
           );
         },
@@ -1821,30 +1829,6 @@ class _ActionButtons extends StatelessWidget {
   }
 }
 
-// Диалоги будут добавлены в следующих файлах
-class _AddMeasurementSheet extends StatelessWidget {
-  final Function(Map<String, double>) onMeasurementAdded;
-
-  const _AddMeasurementSheet({required this.onMeasurementAdded});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.8,
-      decoration: const BoxDecoration(
-        color: PRIMETheme.bg,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: const Center(
-        child: Text(
-          'Форма добавления измерений\n(в разработке)',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: PRIMETheme.sand),
-        ),
-      ),
-    );
-  }
-}
 
 class _HistorySheet extends StatelessWidget {
   final Map<String, dynamic> healthData;

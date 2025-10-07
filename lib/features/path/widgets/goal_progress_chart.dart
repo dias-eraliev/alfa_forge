@@ -118,7 +118,7 @@ class GoalProgressChart extends StatelessWidget {
           ),
         ),
       ],
-      lineTouchData: LineTouchData(
+      lineTouchData: const LineTouchData(
         enabled: false,
       ),
     );

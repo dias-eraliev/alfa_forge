@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../../../app/theme.dart';
 import '../widgets/progress_dots.dart';
+import '../../../core/providers/auth_provider.dart';
 import 'name_page.dart'; // Для доступа к provider
 
 class ReadyPage extends ConsumerWidget {
@@ -11,11 +13,26 @@ class ReadyPage extends ConsumerWidget {
   void _completeOnboarding(BuildContext context, WidgetRef ref) async {
     final controller = ref.read(onboardingControllerProvider);
     
-    await controller.completeOnboarding();
-    
-    if (context.mounted) {
-      // Переходим на главную страницу с первым входом
-      context.go('/');
+    try {
+      print('🚀 Starting onboarding completion...');
+      await controller.completeOnboarding();
+      
+      if (context.mounted) {
+        print('🏠 Forcing router refresh through auth-check...');
+        // Принудительно перенаправляем через auth-check, чтобы router.redirect сработал
+        context.go('/auth-check');
+      }
+    } catch (e) {
+      print('❌ Onboarding completion error: $e');
+      // Обработка ошибки завершения онбординга
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка завершения онбординга: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -66,7 +83,7 @@ class ReadyPage extends ConsumerWidget {
                   Column(
                     children: [
                       Text(
-                        'PRIME FORGE',
+                        'prime',
                         style: Theme.of(context).textTheme.displayLarge?.copyWith(
                           fontSize: isSmallScreen ? 48 : 56,
                           fontWeight: FontWeight.w900,
