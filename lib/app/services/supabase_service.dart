@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../features/path/models/user_progress_model.dart';
+import '../../features/path/models/goal_model.dart';
 
 /// Сервис для работы с Supabase
 class SupabaseService {
@@ -745,4 +746,96 @@ class SupabaseService {
     'задачи': 0,
     'тренировки': 0,
   };
+
+  // ============================
+  // Goals API
+  // ============================
+
+  /// Загрузить активные цели пользователя вместе с историей за [days] дней
+  Future<List<Goal>> listGoalsWithHistory({int days = 7}) async {
+    if (currentUserId == null) return [];
+    try {
+      final rows = await _client
+          .from('goals')
+          .select('*')
+          .eq('user_id', currentUserId!)
+          .eq('is_active', true)
+          .order('created_at');
+
+      final goals = <Goal>[];
+      for (final r in (rows as List)) {
+        final goal = _mapGoalFromRow(r as Map<String, dynamic>);
+        // подгружаем историю для графика
+        goal.dailyHistory = await _fetchGoalHistory(goal.id, days: days);
+        goals.add(goal);
+      }
+      return goals;
+    } catch (e) {
+      debugPrint('Error listing goals: $e');
+      return [];
+    }
+  }
+
+  /// Получить историю цели за последние [days] дней
+  Future<List<DailyGoalValue>> _fetchGoalHistory(String goalId, {int days = 7}) async {
+    if (currentUserId == null) return [];
+    try {
+      final start = DateUtils
+          .dateOnly(DateTime.now().subtract(Duration(days: days - 1)))
+          .toIso8601String();
+      final history = await _client
+          .from('goal_history')
+          .select('date, value, notes, goal_id')
+          .eq('goal_id', goalId)
+          .gte('date', start)
+          .order('date');
+      final list = <DailyGoalValue>[];
+      for (final h in (history as List)) {
+        final m = h as Map<String, dynamic>;
+        final dateStr = (m['date'] ?? '').toString();
+        final dt = DateTime.tryParse(dateStr);
+        if (dt == null) continue;
+        list.add(
+          DailyGoalValue(
+            date: DateTime(dt.year, dt.month, dt.day),
+            value: (m['value'] as num).toDouble(),
+            note: (m['notes'] as String?),
+          ),
+        );
+      }
+      return list;
+    } catch (e) {
+      debugPrint('Error fetching goal history: $e');
+      return [];
+    }
+  }
+
+  Goal _mapGoalFromRow(Map<String, dynamic> r) {
+    final id = (r['id'] ?? '').toString();
+    final name = (r['name'] ?? '—').toString();
+    final emoji = (r['emoji'] ?? '').toString();
+    final currentValue = ((r['current_value'] ?? 0) as num).toDouble();
+    final targetValue = ((r['target_value'] ?? 0) as num).toDouble();
+    final unit = (r['unit'] ?? '').toString();
+    final goalTypeStr = (r['goal_type'] ?? 'increase').toString();
+    final type = goalTypeStr == 'decrease' ? GoalType.decrease : GoalType.increase;
+    final colorHex = (r['color_hex'] ?? '#E9E1D1').toString();
+    final daysPassed = (r['days_passed'] ?? 0) as int;
+    final createdAt = DateTime.tryParse((r['created_at'] ?? '').toString());
+    final updatedAt = DateTime.tryParse((r['updated_at'] ?? '').toString());
+
+    return Goal(
+      id: id,
+      name: name,
+      emoji: emoji,
+      currentValue: currentValue,
+      targetValue: targetValue,
+      unit: unit,
+      daysPassed: daysPassed,
+      type: type,
+      colorHex: colorHex,
+      createdAt: createdAt,
+      lastUpdated: updatedAt,
+    );
+  }
 }

@@ -557,13 +557,20 @@ class _MetricCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: Theme.of(context).textTheme.bodyMedium),
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   const SizedBox(height: 4),
                   Text(
                     value,
                     style: Theme.of(
                       context,
                     ).textTheme.headlineSmall?.copyWith(color: PRIMETheme.sand),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
@@ -603,11 +610,11 @@ class _TaskCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: PRIMETheme.line),
       ),
-      child: Row(
-        children: [
-          const Icon(Icons.flag, color: PRIMETheme.sand),
-          const SizedBox(width: 12),
-          Expanded(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 380;
+
+          Widget textBlock = Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -619,45 +626,79 @@ class _TaskCard extends StatelessWidget {
                 Text(
                   hasTask ? title : 'Задача не найдена',
                   style: Theme.of(context).textTheme.bodySmall,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 if (hasTask && (dueDate != null && dueDate!.isNotEmpty)) ...[
                   const SizedBox(height: 4),
                   Text(
                     'Дедлайн: $dueDate',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: PRIMETheme.sandWeak),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: PRIMETheme.sandWeak),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ],
             ),
-          ),
-          if (hasTask)
-            Row(
-              mainAxisSize: MainAxisSize.min,
+          );
+
+          Widget actions = hasTask
+              ? Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (onRefresh != null)
+                      IconButton(
+                        tooltip: 'Обновить',
+                        onPressed: onRefresh,
+                        icon: const Icon(Icons.refresh, color: PRIMETheme.sand),
+                      ),
+                    if (!isStarted)
+                      ElevatedButton(
+                        onPressed: onStart,
+                        child: const Text('Старт'),
+                      ),
+                    if (isStarted)
+                      OutlinedButton(
+                        onPressed: onComplete,
+                        child: const Text('Завершить'),
+                      ),
+                  ],
+                )
+              : const SizedBox.shrink();
+
+          if (isNarrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (onRefresh != null) ...[
-                  IconButton(
-                    tooltip: 'Обновить',
-                    onPressed: onRefresh,
-                    icon: const Icon(Icons.refresh, color: PRIMETheme.sand),
-                  ),
-                  const SizedBox(width: 4),
-                ],
-                if (!isStarted)
-                  ElevatedButton(
-                    onPressed: onStart,
-                    child: const Text('Старт'),
-                  ),
-                if (isStarted) const SizedBox(width: 8),
-                if (isStarted)
-                  OutlinedButton(
-                    onPressed: onComplete,
-                    child: const Text('Завершить'),
-                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.flag, color: PRIMETheme.sand),
+                    const SizedBox(width: 12),
+                    textBlock,
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Align(alignment: Alignment.centerRight, child: actions),
               ],
-            )
-          else
-            const SizedBox.shrink(),
-        ],
+            );
+          }
+
+          return Row(
+            children: [
+              const Icon(Icons.flag, color: PRIMETheme.sand),
+              const SizedBox(width: 12),
+              textBlock,
+              const SizedBox(width: 8),
+              actions,
+            ],
+          );
+        },
       ),
     );
   }
@@ -708,11 +749,16 @@ class _HabitsList extends StatelessWidget {
                       Text(
                         (habit['name'] ?? '—').toString(),
                         style: Theme.of(context).textTheme.titleMedium,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 4),
                       Text(
                         (habit['progress'] ?? '').toString(),
                         style: Theme.of(context).textTheme.bodySmall,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: true,
                       ),
                     ],
                   ),
