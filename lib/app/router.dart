@@ -1,4 +1,6 @@
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/foundation.dart';
 import '../features/auth/login_page.dart';
 import '../features/path/path_page.dart';
 import '../features/path/my_map_page.dart';
@@ -11,25 +13,61 @@ import '../features/gto/pages/ai_motion_page.dart';
 import '../features/onboarding/pages/intro_page.dart';
 import '../features/onboarding/pages/profile_page.dart';
 import '../features/onboarding/pages/name_page.dart';
+import '../features/onboarding/pages/email_verification_page.dart';
+import '../features/onboarding/pages/password_page.dart';
 import '../features/onboarding/pages/habits_selection_page.dart';
 import '../features/onboarding/pages/ready_page.dart';
 import '../features/onboarding/controllers/onboarding_controller.dart';
 
+class _SupabaseAuthListenable extends ChangeNotifier {
+  _SupabaseAuthListenable() {
+    // слушаем изменения auth и уведомляем роутер
+    Supabase.instance.client.auth.onAuthStateChange.listen((_) => notifyListeners());
+  }
+}
+
 final router = GoRouter(
+  refreshListenable: _SupabaseAuthListenable(),
   initialLocation: '/intro',
   redirect: (context, state) async {
+    // Проверяем статус аутентификации через Supabase
+    final supabase = Supabase.instance.client;
+    final currentUser = supabase.auth.currentUser;
+    final isAuthenticated = currentUser != null;
+
     // Проверяем, завершен ли онбординг
     final isOnboardingCompleted = await OnboardingController.isOnboardingCompleted();
     final currentPath = state.uri.toString();
-    
-    // Если онбординг не завершен и пользователь пытается зайти в основное приложение
-    if (!isOnboardingCompleted && 
-        currentPath != '/login' && 
-        currentPath != '/intro' &&
-        !currentPath.startsWith('/onboarding')) {
-      return '/intro'; // Перенаправляем на intro страницу
+
+    // Логика редиректов:
+    // 1. Если онбординг завершен И пользователь авторизован → разрешаем доступ к основному приложению
+    if (isOnboardingCompleted && isAuthenticated) {
+      // Если пользователь пытается зайти на страницы онбординга или логина, перенаправляем на главную
+      if (currentPath == '/intro' ||
+          currentPath == '/login' ||
+          currentPath.startsWith('/onboarding')) {
+        return '/';
+      }
+      return null; // Остаемся на текущем маршруте
     }
-    
+
+    // 2. Если онбординг завершен, НО пользователь НЕ авторизован → перенаправляем на логин
+    if (isOnboardingCompleted && !isAuthenticated) {
+      if (currentPath != '/login') {
+        return '/login';
+      }
+      return null;
+    }
+
+    // 3. Если онбординг НЕ завершен → разрешаем только страницы онбординга и логина
+    if (!isOnboardingCompleted) {
+      if (currentPath != '/login' &&
+          currentPath != '/intro' &&
+          !currentPath.startsWith('/onboarding')) {
+        return '/intro';
+      }
+    }
+
     return null; // Остаемся на текущем маршруте
   },
   routes: [
@@ -42,6 +80,8 @@ final router = GoRouter(
     // Onboarding routes - полная система регистрации в стиле Силиконовой долины
     GoRoute(path: '/onboarding/profile', builder: (c, s) => const ProfilePage()),
     GoRoute(path: '/onboarding/name', builder: (c, s) => const NamePage()),
+    GoRoute(path: '/onboarding/password', builder: (c, s) => const PasswordPage()),
+    GoRoute(path: '/onboarding/email-verification', builder: (c, s) => const EmailVerificationPage()),
     GoRoute(path: '/onboarding/habits', builder: (c, s) => const HabitsSelectionPage()),
     GoRoute(path: '/onboarding/ready', builder: (c, s) => const ReadyPage()),
     

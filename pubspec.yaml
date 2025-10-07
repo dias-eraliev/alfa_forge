@@ -100,6 +100,8 @@ flutter:
   
   # Добавим ассеты для 3D моделей и анимаций
   assets:
+    # Файл окружения для Supabase (не коммитьте реальный .env)
+    - .env
     - assets/animations/
     - assets/models/
     - assets/sounds/

@@ -126,8 +126,8 @@ class _HabitsSelectionPageState extends ConsumerState<HabitsSelectionPage>
             children: [
               // Прогресс
               const ProgressDots(
-                totalSteps: 5,
-                currentStep: 3,
+                totalSteps: 7,
+                currentStep: 4,
               ),
               
               SizedBox(height: isSmallScreen ? 32 : 48),
@@ -296,8 +296,8 @@ class _HabitsSelectionPageState extends ConsumerState<HabitsSelectionPage>
             children: [
               // Прогресс
               const ProgressDots(
-                totalSteps: 5,
-                currentStep: 3,
+                totalSteps: 7,
+                currentStep: 4,
               ),
               
               SizedBox(height: isSmallScreen ? 32 : 48),
@@ -407,7 +407,7 @@ class _HabitsSelectionPageState extends ConsumerState<HabitsSelectionPage>
                 height: isSmallScreen ? 56 : 64,
                 child: ElevatedButton(
                   onPressed: controller.areHabitsValid 
-                      ? () => context.go('/onboarding/ready')
+                      ? () => context.go('/onboarding/password')
                       : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: controller.areHabitsValid 

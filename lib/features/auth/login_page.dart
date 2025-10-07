@@ -1,73 +1,43 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../app/theme.dart';
 import '../onboarding/controllers/onboarding_controller.dart';
+import '../onboarding/pages/name_page.dart'; // Для доступа к onboardingControllerProvider
+import 'providers/auth_provider.dart';
 
-class LoginPage extends StatefulWidget {
+class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
 
   @override
-  State<LoginPage> createState() => _LoginPageState();
+  ConsumerState<LoginPage> createState() => _LoginPageState();
 }
 
-class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
+class _LoginPageState extends ConsumerState<LoginPage> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isPasswordVisible = false;
-  bool _isLoading = false;
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
-  late Animation<Offset> _slideAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 1200),
-      vsync: this,
-    );
-    
-    _fadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
-    ));
-    
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0.0, 0.3),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: const Interval(0.2, 0.8, curve: Curves.easeOut),
-    ));
-    
-    _animationController.forward();
-  }
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
-    _animationController.dispose();
     super.dispose();
   }
 
-  Future<void> _login() async {
+  Future<void> _signIn() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isLoading = true);
+    final authNotifier = ref.read(authNotifierProvider.notifier);
 
-    // Имитация запроса к серверу
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      await authNotifier.signIn(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
 
-    setState(() => _isLoading = false);
-
-    // Простая проверка для демо
-    if (_emailController.text.isNotEmpty && _passwordController.text.isNotEmpty) {
       if (mounted) {
         // Отмечаем онбординг как завершённый при успешном входе
         try {
@@ -76,7 +46,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         } catch (e) {
           debugPrint('Error marking onboarding as completed: $e');
         }
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Добро пожаловать в PRIME!'),
@@ -84,25 +54,50 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             duration: Duration(seconds: 2),
           ),
         );
-        
+
         // Переход на главную страницу
         context.go('/');
       }
-    } else {
+    } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Неверные данные для входа'),
+          SnackBar(
+            content: Text('Ошибка входа: ${error.toString()}'),
             backgroundColor: PRIMETheme.primary,
-            duration: Duration(seconds: 3),
+            duration: const Duration(seconds: 3),
           ),
         );
       }
     }
   }
 
-  @override
+  Future<void> _signUp() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    // Сохраняем email и пароль в OnboardingController для последующей регистрации
+    final onboardingController = ref.read(onboardingControllerProvider);
+    onboardingController.setInitialCredentials(
+      email: _emailController.text.trim(),
+      password: _passwordController.text,
+    );
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Начнем настройку профиля.'),
+          backgroundColor: PRIMETheme.success,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      // Переход на онбординг
+      context.go('/onboarding/name');
+    }
+  }  @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(authNotifierProvider);
+    final isLoading = authState.isLoading;
+
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
     final isSmallScreen = screenWidth < 600;
@@ -117,38 +112,40 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
               horizontal: isSmallScreen ? 20 : 40,
               vertical: 20,
             ),
-            child: FadeTransition(
-              opacity: _fadeAnimation,
-              child: SlideTransition(
-                position: _slideAnimation,
-                child: Container(
-                  width: cardWidth,
-                  constraints: BoxConstraints(
-                    minHeight: screenHeight * 0.6,
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Логотип и заголовок
-                      _buildHeader(isSmallScreen),
-                      
-                      SizedBox(height: isSmallScreen ? 40 : 60),
-                      
-                      // Форма входа
-                      _buildLoginForm(isSmallScreen),
-                      
-                      SizedBox(height: isSmallScreen ? 24 : 32),
-                      
-                      // Кнопка входа
-                      _buildLoginButton(isSmallScreen),
-                      
-                      SizedBox(height: isSmallScreen ? 20 : 24),
-                      
-                      // Дополнительные ссылки
-                      _buildAdditionalLinks(),
-                    ],
-                  ),
-                ),
+            child: Container(
+              width: cardWidth,
+              constraints: BoxConstraints(minHeight: screenHeight * 0.6),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Логотип и заголовок
+                  _buildHeader(isSmallScreen),
+
+                  SizedBox(height: isSmallScreen ? 40 : 60),
+
+                  // Форма входа
+                  _buildLoginForm(isSmallScreen),
+
+                  SizedBox(height: isSmallScreen ? 24 : 32),
+
+                  // Кнопка входа
+                  _buildLoginButton(isSmallScreen, isLoading),
+
+                  SizedBox(height: isSmallScreen ? 16 : 20),
+
+                  SizedBox(height: isSmallScreen ? 20 : 24),
+
+                  // Сообщение об ошибке
+                  if (authState.hasError)
+                    _buildErrorMessage(
+                      context,
+                      authState.error.toString(),
+                      isSmallScreen,
+                    ),
+
+                  // Дополнительные ссылки
+                  _buildAdditionalLinks(context, isSmallScreen),
+                ],
               ),
             ),
           ),
@@ -170,9 +167,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             color: PRIMETheme.sand,
           ),
         ),
-        
+
         SizedBox(height: isSmallScreen ? 8 : 12),
-        
+
         // Статус с рамкой
         Container(
           padding: EdgeInsets.symmetric(
@@ -194,9 +191,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             ),
           ),
         ),
-        
+
         SizedBox(height: isSmallScreen ? 12 : 16),
-        
+
         // Подзаголовок
         Text(
           'Авторизация в мобильном приложении',
@@ -230,9 +227,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             },
             isSmallScreen: isSmallScreen,
           ),
-          
+
           SizedBox(height: isSmallScreen ? 16 : 20),
-          
+
           // Password поле
           _buildTextField(
             controller: _passwordController,
@@ -339,12 +336,12 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildLoginButton(bool isSmallScreen) {
+  Widget _buildLoginButton(bool isSmallScreen, bool isLoading) {
     return SizedBox(
       width: double.infinity,
       height: isSmallScreen ? 50 : 56,
       child: ElevatedButton(
-        onPressed: _isLoading ? null : _login,
+        onPressed: isLoading ? null : _signIn,
         style: ElevatedButton.styleFrom(
           backgroundColor: PRIMETheme.primary,
           foregroundColor: PRIMETheme.sand,
@@ -353,25 +350,24 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
-          elevation: _isLoading ? 0 : 4,
+          elevation: isLoading ? 0 : 4,
           shadowColor: PRIMETheme.primary.withOpacity(0.3),
         ),
-        child: _isLoading
+        child: isLoading
             ? const SizedBox(
                 width: 20,
                 height: 20,
                 child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(PRIMETheme.sandWeak),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    PRIMETheme.sandWeak,
+                  ),
                   strokeWidth: 2,
                 ),
               )
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    Icons.login,
-                    size: isSmallScreen ? 18 : 20,
-                  ),
+                  Icon(Icons.login, size: isSmallScreen ? 18 : 20),
                   const SizedBox(width: 8),
                   Text(
                     'ВОЙТИ В СИСТЕМУ',
@@ -387,7 +383,31 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildAdditionalLinks() {
+  Widget _buildErrorMessage(
+    BuildContext context,
+    String error,
+    bool isSmallScreen,
+  ) {
+    return Container(
+      margin: EdgeInsets.only(top: isSmallScreen ? 16 : 20),
+      padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+      decoration: BoxDecoration(
+        color: PRIMETheme.primary.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: PRIMETheme.primary, width: 1),
+      ),
+      child: Text(
+        error,
+        style: TextStyle(
+          color: PRIMETheme.primary,
+          fontSize: isSmallScreen ? 14 : 16,
+        ),
+        textAlign: TextAlign.center,
+      ),
+    );
+  }
+
+  Widget _buildAdditionalLinks(BuildContext context, bool isSmallScreen) {
     return Column(
       children: [
         TextButton(
@@ -408,18 +428,15 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             ),
           ),
         ),
-        
+
         const SizedBox(height: 8),
-        
+
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Text(
               'Нет аккаунта? ',
-              style: TextStyle(
-                color: PRIMETheme.sandWeak,
-                fontSize: 14,
-              ),
+              style: TextStyle(color: PRIMETheme.sandWeak, fontSize: 14),
             ),
             TextButton(
               onPressed: () {
@@ -442,7 +459,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             ),
           ],
         ),
-        
+
         // Дополнительная кнопка для демо - сброс онбординга
         const SizedBox(height: 16),
         TextButton(
@@ -450,7 +467,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             // Сброс онбординга для демо
             final controller = OnboardingController();
             await controller.resetOnboarding();
-            if (mounted) {
+            if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('Онбординг сброшен (демо функция)'),

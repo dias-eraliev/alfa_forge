@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../app/theme.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../widgets/progress_dots.dart';
 import 'name_page.dart'; // Для доступа к provider
 
@@ -10,18 +11,67 @@ class ReadyPage extends ConsumerWidget {
 
   void _completeOnboarding(BuildContext context, WidgetRef ref) async {
     final controller = ref.read(onboardingControllerProvider);
-    
-    await controller.completeOnboarding();
-    
-    if (context.mounted) {
-      // Переходим на главную страницу с первым входом
-      context.go('/');
+    final authNotifier = ref.read(authNotifierProvider.notifier);
+
+    // Проверяем, что у нас есть необходимые данные для регистрации
+    if (controller.email == null || controller.email!.isEmpty ||
+        controller.fullName == null || controller.fullName!.isEmpty ||
+        controller.password == null || controller.password!.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Не хватает данных для регистрации. Пожалуйста, вернитесь и заполните все поля.'),
+            backgroundColor: PRIMETheme.primary,
+          ),
+        );
+      }
+      return;
+    }
+
+    try {
+      // Получаем ID выбранных привычек
+      final selectedHabitIds = controller.selectedHabits.map((habit) => habit.id).toList();
+
+      // Регистрируем пользователя через Supabase
+      await authNotifier.signUp(
+        email: controller.email!,
+        password: controller.password!,
+        fullName: controller.fullName,
+        username: controller.username,
+        phone: controller.phone,
+        city: controller.city,
+        selectedHabitIds: selectedHabitIds,
+      );
+
+      // Переходим к подтверждению email
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Регистрация успешна! Проверьте почту для подтверждения.'),
+            backgroundColor: PRIMETheme.success,
+            duration: Duration(seconds: 3),
+          ),
+        );
+        context.go('/onboarding/email-verification');
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка регистрации: ${error.toString()}'),
+            backgroundColor: PRIMETheme.primary,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = ref.watch(onboardingControllerProvider);
+    final authState = ref.watch(authNotifierProvider);
+    
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
     final isSmallScreen = screenWidth < 600;
@@ -56,8 +106,8 @@ class ReadyPage extends ConsumerWidget {
                 children: [
                   // Прогресс
                   const ProgressDots(
-                    totalSteps: 5,
-                    currentStep: 5,
+                    totalSteps: 7,
+                    currentStep: 7,
                   ),
                   
                   SizedBox(height: isSmallScreen ? 32 : 48),
@@ -267,25 +317,25 @@ class ReadyPage extends ConsumerWidget {
                     width: double.infinity,
                     height: isSmallScreen ? 56 : 64,
                     child: ElevatedButton(
-                      onPressed: controller.canComplete 
+                      onPressed: (controller.canComplete && !authState.isLoading) 
                           ? () => _completeOnboarding(context, ref)
                           : null,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: controller.canComplete 
+                        backgroundColor: (controller.canComplete && !authState.isLoading) 
                             ? PRIMETheme.primary 
                             : PRIMETheme.line,
-                        foregroundColor: controller.canComplete 
+                        foregroundColor: (controller.canComplete && !authState.isLoading) 
                             ? PRIMETheme.sand 
                             : PRIMETheme.sandWeak,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        elevation: controller.canComplete ? 8 : 0,
-                        shadowColor: controller.canComplete 
+                        elevation: (controller.canComplete && !authState.isLoading) ? 8 : 0,
+                        shadowColor: (controller.canComplete && !authState.isLoading) 
                             ? PRIMETheme.primary.withOpacity(0.4) 
                             : null,
                       ),
-                      child: controller.isLoading
+                      child: (controller.isLoading || authState.isLoading)
                           ? const SizedBox(
                               width: 20,
                               height: 20,

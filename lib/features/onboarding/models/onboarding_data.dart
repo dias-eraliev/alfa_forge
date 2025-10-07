@@ -11,6 +11,9 @@ class OnboardingData {
   // Имя пользователя
   final String? username;
   
+  // Пароль
+  final String? password;
+  
   // Привычки
   final List<HabitModel> selectedHabits;
   final bool isCompleted;
@@ -21,6 +24,7 @@ class OnboardingData {
     this.phone,
     this.city,
     this.username,
+    this.password,
     this.selectedHabits = const [],
     this.isCompleted = false,
   });
@@ -31,6 +35,7 @@ class OnboardingData {
     String? phone,
     String? city,
     String? username,
+    String? password,
     List<HabitModel>? selectedHabits,
     bool? isCompleted,
   }) {
@@ -40,6 +45,7 @@ class OnboardingData {
       phone: phone ?? this.phone,
       city: city ?? this.city,
       username: username ?? this.username,
+      password: password ?? this.password,
       selectedHabits: selectedHabits ?? this.selectedHabits,
       isCompleted: isCompleted ?? this.isCompleted,
     );

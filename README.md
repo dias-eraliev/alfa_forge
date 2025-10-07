@@ -315,6 +315,30 @@ double calculateHabitStrength(List<bool> completions) {
 }
 ```
 
+## 🔌 Интеграция с Supabase (Backend)
+
+Приложение подключено к Supabase для аутентификации и хранения данных. Для локального запуска:
+
+1) Создайте проект на https://supabase.com и скопируйте:
+  - Project URL
+  - Public anon key
+
+2) Создайте файл `.env` в корне проекта (есть пример `.env.example`):
+  - SUPABASE_URL=https://<your-project-ref>.supabase.co
+  - SUPABASE_ANON_KEY=eyJ...
+
+3) Настройте Redirect URLs в Supabase Dashboard → Authentication → URL Configuration:
+  - Добавьте `alfaforge://auth/callback`
+  - (опционально для Web) ваш локальный/прод домен
+
+4) Мобильные платформы уже настроены:
+  - Android: `android/app/src/main/AndroidManifest.xml` содержит intent-filter под схему `alfaforge://auth/callback`
+  - iOS: `ios/Runner/Info.plist` содержит `CFBundleURLSchemes` со значением `alfaforge`
+
+5) Инициализация происходит в `lib/main.dart` через `flutter_dotenv` и `Supabase.initialize`.
+
+Если при подтверждении email появляется ошибка redirect, убедитесь, что URL из п.3 совпадает с конфигурацией в Dashboard.
+
 #### Система streak'ов:
 ```dart
 int calculateStreak(List<bool> completions) {

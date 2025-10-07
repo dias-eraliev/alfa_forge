@@ -101,10 +101,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               ),
               child: Column(
                 children: [
-                  // Прогресс (5 шагов теперь)
+                  // Прогресс (7 шагов теперь)
                   const ProgressDots(
-                    totalSteps: 5,
-                    currentStep: 1,
+                    totalSteps: 7,
+                    currentStep: 2,
                   ),
                   
                   SizedBox(height: isSmallScreen ? 32 : 48),

@@ -6,7 +6,6 @@ import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../../app/theme.dart';
 import '../models/exercise_model.dart';
-import '../models/workout_session_model.dart';
 import '../models/real_ai_detector.dart';
 import '../controllers/workout_controller.dart';
 import '../controllers/tts_controller.dart';

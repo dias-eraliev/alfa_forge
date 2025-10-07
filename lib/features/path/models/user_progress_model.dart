@@ -118,6 +118,14 @@ class UserProgress extends HiveObject {
       if (currentStreak > longestStreak) {
         longestStreak = currentStreak;
       }
+    } else {
+      // Тот же день: если это первое действие у нового пользователя (стрик 0), начинаем с 1
+      if (currentStreak == 0) {
+        currentStreak = 1;
+        if (currentStreak > longestStreak) {
+          longestStreak = currentStreak;
+        }
+      }
     }
   }
 

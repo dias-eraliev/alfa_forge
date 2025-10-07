@@ -109,8 +109,8 @@ class _NamePageState extends ConsumerState<NamePage> {
                 children: [
                   // Прогресс
                   const ProgressDots(
-                    totalSteps: 5,
-                    currentStep: 2,
+                    totalSteps: 7,
+                    currentStep: 1,
                   ),
                   
                   SizedBox(height: isSmallScreen ? 32 : 48),

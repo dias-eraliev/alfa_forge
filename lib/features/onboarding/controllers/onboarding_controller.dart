@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../app/services/supabase_service.dart';
 import '../models/onboarding_data.dart';
 import '../models/habit_model.dart';
 import '../models/development_sphere_model.dart';
@@ -10,6 +11,7 @@ class OnboardingController extends ChangeNotifier {
 
   OnboardingData _data = const OnboardingData();
   bool _isLoading = false;
+  bool _isCompleting = false; // защита от повторного завершения
 
   // Состояние для выбора сфер
   final List<DevelopmentSphere> _selectedSpheres = [];
@@ -24,6 +26,7 @@ class OnboardingController extends ChangeNotifier {
   String? get phone => _data.phone;
   String? get city => _data.city;
   String? get username => _data.username;
+  String? get password => _data.password;
   List<HabitModel> get selectedHabits => _data.selectedHabits;
   bool get isCompleted => _data.isCompleted;
 
@@ -49,9 +52,13 @@ class OnboardingController extends ChangeNotifier {
                              _data.username!.trim().length >= 3 &&
                              _data.username!.trim().length <= 20;
   
+  bool get isPasswordValid => _data.password != null &&
+                              _data.password!.isNotEmpty &&
+                              _data.password!.length >= 6;
+  
   bool get areHabitsValid => _data.selectedHabits.isNotEmpty;
   
-  bool get canComplete => isProfileValid && isUsernameValid && areHabitsValid;
+  bool get canComplete => isProfileValid && isUsernameValid && isPasswordValid && areHabitsValid;
 
   // Методы для сохранения профильных данных
   void setProfileData({
@@ -69,8 +76,25 @@ class OnboardingController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Метод для сохранения начальных учетных данных
+  void setInitialCredentials({
+    required String email,
+    required String password,
+  }) {
+    _data = _data.copyWith(
+      email: email.trim(),
+      password: password,
+    );
+    notifyListeners();
+  }
+
   void setUsername(String username) {
     _data = _data.copyWith(username: username.trim());
+    notifyListeners();
+  }
+
+  void setPassword(String password) {
+    _data = _data.copyWith(password: password);
     notifyListeners();
   }
 
@@ -125,34 +149,67 @@ class OnboardingController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Валидация сфер
-  bool get areSpheresValid => _selectedSpheres.length >= 2 && _selectedSpheres.length <= 3;
-  
-  // Обновляем общую валидацию
-  bool get canProceedFromSpheres => areSpheresValid;
-
+  // Завершение онбординга - сохранение данных и привычек в базу данных
   Future<void> completeOnboarding() async {
-    if (!canComplete) return;
+    if (_isCompleting) return; // уже выполняется
+    final supabaseService = SupabaseService();
+    final currentUserId = supabaseService.currentUserId;
 
-    _isLoading = true;
+    if (currentUserId == null) {
+      throw Exception('Пользователь не авторизован');
+    }
+
+  _isLoading = true;
+  _isCompleting = true;
     notifyListeners();
 
     try {
+      // Явно всегда сохраняем профиль пользователя (upsert с onConflict: 'id')
+      await supabaseService.saveUserProfile(
+        fullName: _data.fullName ?? '',
+        email: _data.email ?? '',
+        phone: _data.phone ?? '',
+        city: _data.city ?? '',
+        username: _data.username ?? '',
+      );
+
+      // Явно всегда сохраняем привычки пользователя
+      if (_data.selectedHabits.isNotEmpty) {
+        final habitsData = _data.selectedHabits.map((habit) => {
+          'id': habit.id,
+          'target_value': 1, // По умолчанию 1 выполнение в день
+          'frequency': 'daily', // По умолчанию ежедневно
+        }).toList();
+        await supabaseService.saveUserHabits(habitsData);
+      }
+
+      // Отмечаем онбординг как завершенный
       _data = _data.copyWith(isCompleted: true);
+
+      // Сохраняем в SharedPreferences
       await _saveData();
-      
-      // Также сохраняем флаг завершения отдельно для быстрой проверки
+
+      // Отмечаем завершение в SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_keyOnboardingCompleted, true);
       await prefs.setBool('onboarding_completed', true);
-      
+
+      print('Onboarding completed successfully for user $currentUserId');
     } catch (e) {
-      debugPrint('Error completing onboarding: $e');
+      print('Error completing onboarding: $e');
+      rethrow;
     } finally {
       _isLoading = false;
+      _isCompleting = false;
       notifyListeners();
     }
   }
+
+  // Валидация сфер
+  bool get areSpheresValid => _selectedSpheres.length >= 2 && _selectedSpheres.length <= 3;
+
+  // Обновляем общую валидацию
+  bool get canProceedFromSpheres => areSpheresValid;
 
   Future<void> loadData() async {
     _isLoading = true;

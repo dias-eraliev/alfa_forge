@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import '../shared/bottom_nav_scaffold.dart';
 import '../../app/theme.dart';
+import '../../app/services/supabase_service.dart';
 
 class TasksPage extends StatefulWidget {
   const TasksPage({super.key});
@@ -17,79 +18,9 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
   Timer? focusTimer;
   late AnimationController _timerAnimationController;
   
-  // Состояние задач с расширенными данными
-  List<Map<String, dynamic>> todayTasks = [
-    {
-      'text': 'Купить продукты на неделю', 
-      'done': false, 
-      'habit': null, 
-      'id': '1',
-      'description': 'Купить все необходимые продукты для семьи на предстоящую неделю. Не забыть про овощи, фрукты и молочные продукты.',
-      'deadline': DateTime.now().add(const Duration(days: 2)),
-      'priority': 'medium',
-      'status': 'assigned'
-    },
-    {
-      'text': 'Позвонить клиенту по проекту', 
-      'done': true, 
-      'habit': null, 
-      'id': '2',
-      'description': 'Обсудить детали проекта Alpha Corp и согласовать следующие этапы работы.',
-      'deadline': DateTime.now().subtract(const Duration(days: 1)),
-      'priority': 'high',
-      'status': 'done'
-    },
-    {
-      'text': 'Тренировка 20 минут', 
-      'done': false, 
-      'habit': 'Бег', 
-      'id': '3',
-      'description': 'Кардио тренировка в спортзале или пробежка в парке. Поддержание физической формы.',
-      'deadline': DateTime.now(),
-      'priority': 'low',
-      'status': 'assigned'
-    },
-    {
-      'text': 'Прочитать 10 страниц книги', 
-      'done': false, 
-      'habit': 'Чтение', 
-      'id': '4',
-      'description': 'Продолжить чтение книги "Чистый код" Роберта Мартина. Развитие профессиональных навыков.',
-      'deadline': DateTime.now().add(const Duration(days: 1)),
-      'priority': 'medium',
-      'status': 'in_progress'
-    },
-    {
-      'text': 'Обновить резюме', 
-      'done': false, 
-      'habit': null, 
-      'id': '5',
-      'description': 'Добавить новые навыки и последние проекты в резюме. Подготовиться к новым возможностям.',
-      'deadline': DateTime.now().add(const Duration(days: 7)),
-      'priority': 'low',
-      'status': 'assigned'
-    },
-    {
-      'text': 'Подготовить отчет', 
-      'done': true, 
-      'habit': null, 
-      'id': '6',
-      'description': 'Составить детальный отчет о проделанной работе за месяц для руководства.',
-      'deadline': DateTime.now().subtract(const Duration(hours: 2)),
-      'priority': 'high',
-      'status': 'done'
-    },
-    {
-      'text': 'Медитация 5 минут', 
-      'done': true, 
-      'habit': 'Медитация', 
-      'id': '7',
-      'description': 'Утренняя медитация для снятия стресса и улучшения концентрации.',
-      'deadline': DateTime.now(),
-      'priority': 'medium',
-      'status': 'done'
-    },
-  ];
+  // Текущее состояние задач, загружаем из Supabase
+  List<Map<String, dynamic>> todayTasks = [];
+  final _service = SupabaseService();
 
   @override
   void initState() {
@@ -98,6 +29,23 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
       duration: const Duration(seconds: 1),
       vsync: this,
     );
+    _loadTasks();
+  }
+  Future<void> _loadTasks() async {
+    final list = await _service.listTasks(forDate: DateTime.now());
+    setState(() {
+      // Нормализуем поля под UI виджет (text/done/id/...)
+      todayTasks = list.map((t) => {
+        'id': t['id'] as String,
+        'text': t['title'] ?? 'Без названия',
+        'description': t['description'],
+        'deadline': t['due_date'] != null ? DateTime.tryParse(t['due_date']) : null,
+        'priority': t['priority'] ?? 'medium',
+        'status': t['status'] ?? 'pending',
+        'habit': null,
+        'done': (t['status'] ?? '') == 'completed',
+      }).toList();
+    });
   }
 
   @override
@@ -153,12 +101,10 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
   }
 
   void _toggleTask(String taskId) {
-    setState(() {
-      final taskIndex = todayTasks.indexWhere((task) => task['id'] == taskId);
-      if (taskIndex != -1) {
-        todayTasks[taskIndex]['done'] = !todayTasks[taskIndex]['done'];
-      }
-    });
+    final idx = todayTasks.indexWhere((task) => task['id'] == taskId);
+    if (idx == -1) return;
+    final newDone = !(todayTasks[idx]['done'] as bool);
+    _service.toggleTaskDone(taskId, newDone).then((_) => _loadTasks());
   }
 
   void _addNewTask() {
@@ -166,18 +112,7 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
       context: context,
       builder: (context) => _AddTaskDialog(
         onTaskAdded: (taskText) {
-          setState(() {
-            todayTasks.add({
-              'text': taskText,
-              'done': false,
-              'habit': null,
-              'id': DateTime.now().millisecondsSinceEpoch.toString(),
-              'description': 'Новая задача без описания',
-              'deadline': DateTime.now().add(const Duration(days: 1)),
-              'priority': 'medium',
-              'status': 'assigned'
-            });
-          });
+          _service.createTask(title: taskText, description: 'Новая задача').then((_) => _loadTasks());
         },
       ),
     );
@@ -189,14 +124,7 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
       builder: (context) => _TaskDetailDialog(
         task: task,
         onStatusChanged: (taskId, newStatus) {
-          setState(() {
-            final taskIndex = todayTasks.indexWhere((t) => t['id'] == taskId);
-            if (taskIndex != -1) {
-              todayTasks[taskIndex]['status'] = newStatus;
-              // Обновляем состояние done в зависимости от статуса
-              todayTasks[taskIndex]['done'] = newStatus == 'done';
-            }
-          });
+          _service.updateTaskStatus(taskId, newStatus).then((_) => _loadTasks());
         },
       ),
     );

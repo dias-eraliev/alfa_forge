@@ -7,11 +7,24 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:alfa_forge/app/app.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 void main() {
+  setUpAll(() async {
+    // Ensure widgets binding and initialize Supabase before tests
+    WidgetsFlutterBinding.ensureInitialized();
+    // Mock SharedPreferences for plugin-less test environment
+    SharedPreferences.setMockInitialValues({});
+    await Supabase.initialize(
+      url: 'https://example-project.supabase.co',
+      anonKey:
+          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.PLACEHOLDER.SIGNATURE',
+    );
+  });
   testWidgets('App starts correctly', (WidgetTester tester) async {
     // Build our app and trigger a frame.
     await tester.pumpWidget(const ProviderScope(child: PRIMEApp()));
