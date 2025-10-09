@@ -17,10 +17,8 @@ class TasksService {
 
   // Получить задачи на сегодня
   Future<ApiResponse<List<ApiTask>>> getTodayTasks() async {
-    final today = DateTime.now().toIso8601String().split('T')[0];
     return await _apiClient.get<List<ApiTask>>(
-      '/tasks/today',
-      queryParams: {'date': today},
+      '/tasks/today/list',
       fromJson: (json) {
         final List<dynamic> data = json['data'] ?? json as List<dynamic>;
         return data.map((taskJson) => ApiTask.fromJson(taskJson)).toList();
@@ -42,8 +40,9 @@ class TasksService {
 
   // Обновить статус задачи
   Future<ApiResponse<ApiTask>> updateTaskStatus(String taskId, String status) async {
-    return await _apiClient.patch<ApiTask>(
-      '/tasks/$taskId/status',
+    // Backend doesn't have PATCH /tasks/:id/status; use PUT /tasks/:id with status in body
+    return await _apiClient.put<ApiTask>(
+      '/tasks/$taskId',
       body: {'status': status},
       fromJson: (json) {
         final data = json['data'] ?? json;
@@ -96,13 +95,13 @@ class TasksService {
     final now = DateTime.now();
     final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
     final endOfWeek = startOfWeek.add(const Duration(days: 6));
-    
-    final startDate = startOfWeek.toIso8601String().split('T')[0];
-    final endDate = endOfWeek.toIso8601String().split('T')[0];
-    
+    // Backend expects startDate/endDate ISO strings on /tasks
+    final startDate = startOfWeek.toIso8601String();
+    final endDate = endOfWeek.toIso8601String();
+
     return await _apiClient.get<List<ApiTask>>(
-      '/tasks/week',
-      queryParams: {'start': startDate, 'end': endDate},
+      '/tasks',
+      queryParams: {'startDate': startDate, 'endDate': endDate},
       fromJson: (json) {
         final List<dynamic> data = json['data'] ?? json as List<dynamic>;
         return data.map((taskJson) => ApiTask.fromJson(taskJson)).toList();
@@ -113,7 +112,7 @@ class TasksService {
   // Получить статистику задач
   Future<ApiResponse<Map<String, dynamic>>> getTasksStats() async {
     return await _apiClient.get<Map<String, dynamic>>(
-      '/tasks/stats',
+      '/tasks/stats/overview',
       fromJson: (json) => json['data'] ?? json,
     );
   }
@@ -178,30 +177,28 @@ class TasksService {
 class UpdateTaskDto {
   final String? title;
   final String? description;
+  // Backend expects: HIGH | MEDIUM | LOW
   final String? priority;
-  final DateTime? dueDate;
+  // Backend expects field name 'deadline' (ISO 8601 string)
+  final DateTime? deadline;
+  // Backend expects: ASSIGNED | IN_PROGRESS | DONE
   final String? status;
-  final String? category;
 
   UpdateTaskDto({
     this.title,
     this.description,
     this.priority,
-    this.dueDate,
+    this.deadline,
     this.status,
-    this.category,
   });
 
   Map<String, dynamic> toJson() {
     final map = <String, dynamic>{};
-    
     if (title != null) map['title'] = title;
     if (description != null) map['description'] = description;
     if (priority != null) map['priority'] = priority;
-    if (dueDate != null) map['dueDate'] = dueDate!.toIso8601String();
+    if (deadline != null) map['deadline'] = deadline!.toIso8601String();
     if (status != null) map['status'] = status;
-    if (category != null) map['category'] = category;
-    
     return map;
   }
 }

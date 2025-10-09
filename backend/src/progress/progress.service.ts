@@ -180,7 +180,16 @@ export class ProgressService {
 
   // Получить данные для дашборда
   async getDashboardStats(userId: string, dashboardDto: DashboardStatsDto) {
-    const days = dashboardDto.days || 30;
+    // Поддержка string-параметра period из клиента
+    let days = dashboardDto.days || 0;
+    if (!days && dashboardDto.period) {
+      const p = (dashboardDto.period || '').toLowerCase();
+      if (p === 'today') days = 1;
+      else if (p === 'week' || p === '7d') days = 7;
+      else if (p === 'month' || p === '30d') days = 30;
+      else days = 30;
+    }
+    if (!days) days = 30;
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 

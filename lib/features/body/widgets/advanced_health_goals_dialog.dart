@@ -4,7 +4,9 @@ import 'dart:math' as math;
 import '../models/health_goal_model.dart';
 import '../../../app/theme.dart';
 import 'goal_priority_selector.dart';
-import '../../tasks/widgets/date_time_picker.dart';
+import '../../../core/services/api_service.dart';
+import '../../../core/models/api_models.dart';
+import '../../../core/api/api_client.dart';
 
 class AdvancedHealthGoalsDialog extends StatefulWidget {
   final List<HealthGoal> existingGoals;
@@ -794,10 +796,23 @@ class _AdvancedHealthGoalsDialogState extends State<AdvancedHealthGoalsDialog>
 
   // Методы для работы с целями
   void _editGoal(HealthGoal goal) {
-    // TODO: Открыть форму редактирования
-    setState(() {
-      _selectedTab = 1;
-    });
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => _AddGoalForm(
+        initialGoal: goal,
+        onGoalAdded: (updated) {
+          setState(() {
+            final idx = _goals.indexWhere((g) => g.id == updated.id);
+            if (idx >= 0) {
+              _goals[idx] = updated;
+            }
+          });
+          widget.onGoalsUpdated(_goals);
+        },
+      ),
+    );
   }
 
   void _deleteGoal(HealthGoal goal) {
@@ -812,18 +827,45 @@ class _AdvancedHealthGoalsDialogState extends State<AdvancedHealthGoalsDialog>
             child: const Text('Отмена'),
           ),
           TextButton(
-            onPressed: () {
-              setState(() {
-                _goals.remove(goal);
-              });
-              widget.onGoalsUpdated(_goals);
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Цель удалена'),
-                  backgroundColor: PRIMETheme.warn,
-                ),
-              );
+            onPressed: () async {
+              try {
+                final res = await ApiService.instance.deleteHealthGoal(goal.id);
+                if (res.isSuccess) {
+                  setState(() {
+                    _goals.removeWhere((g) => g.id == goal.id);
+                  });
+                  widget.onGoalsUpdated(_goals);
+                  if (mounted) Navigator.pop(context);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Цель удалена'),
+                        backgroundColor: PRIMETheme.warn,
+                      ),
+                    );
+                  }
+                } else {
+                  if (mounted) Navigator.pop(context);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Ошибка удаления: ${res.error ?? ''}'),
+                        backgroundColor: PRIMETheme.warn,
+                      ),
+                    );
+                  }
+                }
+              } catch (e) {
+                if (mounted) Navigator.pop(context);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Ошибка удаления: $e'),
+                      backgroundColor: PRIMETheme.warn,
+                    ),
+                  );
+                }
+              }
             },
             child: const Text('Удалить', style: TextStyle(color: PRIMETheme.warn)),
           ),
@@ -833,36 +875,48 @@ class _AdvancedHealthGoalsDialogState extends State<AdvancedHealthGoalsDialog>
   }
 
   void _toggleGoalComplete(HealthGoal goal) {
-    final updatedGoal = goal.copyWith(
-      currentValue: goal.isCompleted ? goal.targetValue * 0.8 : goal.targetValue,
-    );
-    
-    setState(() {
-      final index = _goals.indexOf(goal);
-      _goals[index] = updatedGoal;
-    });
-    
-    widget.onGoalsUpdated(_goals);
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          updatedGoal.isCompleted ? 'Цель выполнена! 🎉' : 'Цель возвращена в активные',
-        ),
-        backgroundColor: updatedGoal.isCompleted ? PRIMETheme.success : PRIMETheme.primary,
-      ),
-    );
+    final newValue = goal.isCompleted ? (goal.targetValue * 0.8) : goal.targetValue;
+    _updateGoalProgress(goal, newValue, showToastOnSuccess: true);
   }
 
-  void _updateGoalProgress(HealthGoal goal, double newValue) {
-    final updatedGoal = goal.copyWith(currentValue: newValue);
-    
-    setState(() {
-      final index = _goals.indexOf(goal);
-      _goals[index] = updatedGoal;
-    });
-    
-    widget.onGoalsUpdated(_goals);
+  Future<void> _updateGoalProgress(HealthGoal goal, double newValue, {bool showToastOnSuccess = false}) async {
+    try {
+      final res = await ApiService.instance.updateHealthGoalProgress(goal.id, newValue);
+      if (res.isSuccess) {
+        final updated = goal.copyWith(currentValue: newValue);
+        setState(() {
+          final index = _goals.indexWhere((g) => g.id == goal.id);
+          if (index >= 0) _goals[index] = updated;
+        });
+        widget.onGoalsUpdated(_goals);
+        if (showToastOnSuccess && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(updated.isCompleted ? 'Цель выполнена! 🎉' : 'Прогресс обновлен'),
+              backgroundColor: updated.isCompleted ? PRIMETheme.success : PRIMETheme.primary,
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Не удалось обновить прогресс: ${res.error ?? ''}'),
+              backgroundColor: PRIMETheme.warn,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка обновления: $e'),
+            backgroundColor: PRIMETheme.warn,
+          ),
+        );
+      }
+    }
   }
 }
 
@@ -1355,8 +1409,9 @@ class _StatItem extends StatelessWidget {
 
 class _AddGoalForm extends StatefulWidget {
   final Function(HealthGoal) onGoalAdded;
+  final HealthGoal? initialGoal;
 
-  const _AddGoalForm({required this.onGoalAdded});
+  const _AddGoalForm({required this.onGoalAdded, this.initialGoal});
 
   @override
   State<_AddGoalForm> createState() => _AddGoalFormState();
@@ -1386,6 +1441,20 @@ class _AddGoalFormState extends State<_AddGoalForm> {
 
   @override
   Widget build(BuildContext context) {
+    // Префилл полей при редактировании
+    final isEdit = widget.initialGoal != null;
+    if (isEdit && _selectedType == null) {
+      final g = widget.initialGoal!;
+      _selectedType = g.type;
+      _titleController.text = g.title;
+      _targetValueController.text = g.targetValue.toString();
+      _currentValueController.text = g.currentValue.toString();
+      _selectedPriority = g.priority;
+      _selectedFrequency = g.frequency;
+      _startDate = g.startDate;
+      _targetDate = g.targetDate;
+      _notesController.text = g.notes ?? '';
+    }
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Form(
@@ -1559,7 +1628,7 @@ class _AddGoalFormState extends State<_AddGoalForm> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _selectedType == null ? null : _createGoal,
+                onPressed: _selectedType == null ? null : () => _submitGoal(isEdit: isEdit),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _selectedType?.color ?? PRIMETheme.primary,
                   foregroundColor: Colors.white,
@@ -1573,12 +1642,8 @@ class _AddGoalFormState extends State<_AddGoalForm> {
                   children: [
                     Icon(_selectedType?.icon ?? Icons.flag),
                     const SizedBox(width: 8),
-                    const Text(
-                      'Создать цель',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    Text(isEdit ? 'Сохранить цель' : 'Создать цель',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
@@ -1590,44 +1655,213 @@ class _AddGoalFormState extends State<_AddGoalForm> {
     );
   }
 
-  void _createGoal() {
-    if (_formKey.currentState!.validate() && _selectedType != null) {
-      final goal = HealthGoal(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        type: _selectedType!,
-        title: _titleController.text.trim(),
-        targetValue: double.parse(_targetValueController.text),
-        currentValue: double.parse(_currentValueController.text),
-        priority: _selectedPriority,
-        frequency: _selectedFrequency,
-        startDate: _startDate,
-        targetDate: _targetDate,
-        notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
+  Future<void> _submitGoal({required bool isEdit}) async {
+    if (!(_formKey.currentState!.validate() && _selectedType != null)) return;
 
-      widget.onGoalAdded(goal);
+    final dto = <String, dynamic>{
+      'title': _titleController.text.trim(),
+      'goalType': _goalTypeToBackend(_selectedType!),
+      'targetValue': double.parse(_targetValueController.text),
+      'currentValue': double.parse(_currentValueController.text),
+      'priority': _priorityToBackend(_selectedPriority),
+      'frequency': _frequencyToBackend(_selectedFrequency),
+      'startDate': _startDate.toIso8601String(),
+      if (_targetDate != null) 'targetDate': _targetDate!.toIso8601String(),
+      // 'typeId': _measurementTypeIdForGoal(_selectedType!), // опционально
+      if (_notesController.text.trim().isNotEmpty) 'notes': _notesController.text.trim(),
+    };
 
-      // Очистить форму
-      _titleController.clear();
-      _targetValueController.clear();
-      _currentValueController.clear();
-      _notesController.clear();
-      setState(() {
-        _selectedType = null;
-        _selectedPriority = HealthGoalPriority.medium;
-        _selectedFrequency = HealthGoalFrequency.daily;
-        _startDate = DateTime.now();
-        _targetDate = null;
-      });
+    try {
+      ApiResponse<ApiHealthGoal> res;
+      if (isEdit) {
+        res = await ApiService.instance.updateHealthGoal(widget.initialGoal!.id, dto);
+      } else {
+        res = await ApiService.instance.createHealthGoal(dto);
+      }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Цель создана! 🎯'),
-          backgroundColor: PRIMETheme.success,
-        ),
-      );
+      if (res.isSuccess && res.data != null) {
+        final local = _mapApiGoalToLocal(res.data!);
+        widget.onGoalAdded(local);
+
+        if (!isEdit) {
+          // Очистка лишь для режима создания
+          _titleController.clear();
+          _targetValueController.clear();
+          _currentValueController.clear();
+          _notesController.clear();
+          setState(() {
+            _selectedType = null;
+            _selectedPriority = HealthGoalPriority.medium;
+            _selectedFrequency = HealthGoalFrequency.daily;
+            _startDate = DateTime.now();
+            _targetDate = null;
+          });
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(isEdit ? 'Цель обновлена' : 'Цель создана! 🎯'),
+              backgroundColor: PRIMETheme.success,
+            ),
+          );
+        }
+        if (isEdit && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Ошибка сохранения: ${res.error ?? ''}'),
+              backgroundColor: PRIMETheme.warn,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка: $e'),
+            backgroundColor: PRIMETheme.warn,
+          ),
+        );
+      }
     }
   }
+}
+
+// ===== Helpers: mapping enums and models =====
+
+String _goalTypeToBackend(HealthGoalType t) {
+  switch (t) {
+    case HealthGoalType.weight:
+      return 'WEIGHT';
+    case HealthGoalType.bodyFat:
+      return 'BODY_FAT';
+    case HealthGoalType.muscle:
+      return 'MUSCLE';
+    case HealthGoalType.waist:
+      return 'WAIST';
+    case HealthGoalType.chest:
+      return 'CHEST';
+    case HealthGoalType.hips:
+      return 'HIPS';
+    case HealthGoalType.biceps:
+      return 'BICEPS';
+    case HealthGoalType.steps:
+      return 'STEPS';
+    case HealthGoalType.water:
+      return 'WATER';
+    case HealthGoalType.sleep:
+      return 'SLEEP';
+    case HealthGoalType.heartRate:
+      return 'HEART_RATE';
+    case HealthGoalType.bloodPressure:
+      return 'BLOOD_PRESSURE';
+    case HealthGoalType.calories:
+      return 'CALORIES';
+  }
+}
+
+String _priorityToBackend(HealthGoalPriority p) {
+  switch (p) {
+    case HealthGoalPriority.low:
+      return 'LOW';
+    case HealthGoalPriority.medium:
+      return 'MEDIUM';
+    case HealthGoalPriority.high:
+      return 'HIGH';
+  }
+}
+
+String _frequencyToBackend(HealthGoalFrequency f) {
+  switch (f) {
+    case HealthGoalFrequency.daily:
+      return 'DAILY';
+    case HealthGoalFrequency.weekly:
+      return 'WEEKLY';
+    case HealthGoalFrequency.monthly:
+      return 'MONTHLY';
+    case HealthGoalFrequency.yearly:
+      return 'YEARLY';
+  }
+}
+
+HealthGoal _mapApiGoalToLocal(ApiHealthGoal g) {
+  HealthGoalType mapType(String s) {
+    switch (s) {
+      case 'WEIGHT':
+        return HealthGoalType.weight;
+      case 'BODY_FAT':
+        return HealthGoalType.bodyFat;
+      case 'MUSCLE':
+        return HealthGoalType.muscle;
+      case 'WAIST':
+        return HealthGoalType.waist;
+      case 'CHEST':
+        return HealthGoalType.chest;
+      case 'HIPS':
+        return HealthGoalType.hips;
+      case 'BICEPS':
+        return HealthGoalType.biceps;
+      case 'STEPS':
+        return HealthGoalType.steps;
+      case 'WATER':
+        return HealthGoalType.water;
+      case 'SLEEP':
+        return HealthGoalType.sleep;
+      case 'HEART_RATE':
+        return HealthGoalType.heartRate;
+      case 'BLOOD_PRESSURE':
+        return HealthGoalType.bloodPressure;
+      case 'CALORIES':
+        return HealthGoalType.calories;
+      default:
+        return HealthGoalType.weight;
+    }
+  }
+
+  HealthGoalPriority mapPriority(String s) {
+    switch (s) {
+      case 'LOW':
+        return HealthGoalPriority.low;
+      case 'HIGH':
+        return HealthGoalPriority.high;
+      case 'MEDIUM':
+      default:
+        return HealthGoalPriority.medium;
+    }
+  }
+
+  HealthGoalFrequency mapFrequency(String s) {
+    switch (s) {
+      case 'DAILY':
+        return HealthGoalFrequency.daily;
+      case 'MONTHLY':
+        return HealthGoalFrequency.monthly;
+      case 'YEARLY':
+        return HealthGoalFrequency.yearly;
+      case 'WEEKLY':
+      default:
+        return HealthGoalFrequency.weekly;
+    }
+  }
+
+  return HealthGoal(
+    id: g.id,
+    type: mapType(g.goalType),
+    title: g.title,
+    targetValue: g.targetValue,
+    currentValue: g.currentValue,
+    priority: mapPriority(g.priority),
+    frequency: mapFrequency(g.frequency),
+    startDate: g.startDate ?? DateTime.now(),
+    targetDate: g.targetDate,
+    notes: g.notes,
+    isActive: g.isActive,
+    createdAt: g.createdAt,
+    updatedAt: g.updatedAt,
+  );
 }

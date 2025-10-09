@@ -276,6 +276,13 @@ export class DashboardStatsDto {
   @Max(365)
   days?: number;
 
+  @ApiPropertyOptional({
+    description: "Символьный период ('today'|'week'|'month')",
+    default: undefined
+  })
+  @IsOptional()
+  period?: string;
+
   @ApiPropertyOptional({ description: 'Включить детальную статистику', default: false })
   @IsOptional()
   @IsBoolean()

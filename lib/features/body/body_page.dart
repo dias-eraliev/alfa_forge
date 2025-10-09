@@ -7,6 +7,8 @@ import 'widgets/measurement_history_dialog.dart';
 import 'widgets/advanced_health_goals_dialog.dart';
 import 'models/measurement_model.dart';
 import 'models/health_goal_model.dart';
+import '../../core/services/api_service.dart';
+import '../../core/models/api_models.dart';
 
 class BodyPage extends StatefulWidget {
   const BodyPage({super.key});
@@ -21,40 +23,31 @@ class _BodyPageState extends State<BodyPage> with TickerProviderStateMixin {
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
 
-  // Данные о здоровье
+  // Данные о здоровье — без моков, инициализируем пустыми значениями и заполняем из API
   final Map<String, dynamic> healthData = {
-    'weight': 78.5,
-    'height': 180,
-    'bodyFat': 15.2,
-    'muscle': 68.3,
-    'heartRate': 72,
-    'bloodPressure': {'systolic': 120, 'diastolic': 80},
-    'sleep': 7.5,
-    'steps': 8247,
-    'calories': 2340,
-    'water': 2.1,
+    'weight': null,
+    'height': null,
+    'bodyFat': null,
+    'muscle': null,
+    'heartRate': null,
+    'bloodPressure': null, // ожидаем Map<String,int> после API
+    'sleep': null,
+    'steps': null,
+    'calories': null,
+    'water': null,
   };
 
-  // Измерения тела
-  final Map<String, double> bodyMeasurements = {
-    'chest': 102.5,
-    'waist': 84.0,
-    'hips': 98.0,
-    'biceps': 36.5,
-    'thighs': 58.0,
-    'neck': 38.0,
-  };
+  // Измерения тела — пусто до загрузки из API
+  final Map<String, double> bodyMeasurements = {};
 
-  // Цели
-  final Map<String, dynamic> goals = {
-    'weight': {'current': 78.5, 'target': 75.0},
-    'bodyFat': {'current': 15.2, 'target': 12.0},
-    'steps': {'current': 8247, 'target': 10000},
-    'water': {'current': 2.1, 'target': 3.0},
-  };
+  // Цели — отображаются по списку _healthGoals; эта карта больше не используется как источник данных
+  final Map<String, dynamic> goals = {};
 
   // Цели здоровья
   List<HealthGoal> _healthGoals = [];
+  bool _loading = false;
+  // Маппинг локальных slug (например, 'weight') -> реальный backend id из таблицы measurement_types
+  final Map<String, String> _measurementTypeIdMap = {};
 
   @override
   void initState() {
@@ -78,6 +71,59 @@ class _BodyPageState extends State<BodyPage> with TickerProviderStateMixin {
 
     _fadeController.forward();
     _slideController.forward();
+
+    // Загрузка данных из API
+    _loadFromApi();
+  }
+
+  Future<void> _loadFromApi() async {
+    setState(() => _loading = true);
+    try {
+      final api = ApiService.instance;
+      // 1) Подтягиваем типы измерений и строим маппинг локальныйId -> backendId
+      final typesRes = await api.getMeasurementTypes();
+      if (typesRes.isSuccess && typesRes.data != null) {
+        _buildMeasurementTypeIdMap(typesRes.data!);
+      }
+      final latestRes = await api.getLatestHealthMeasurements();
+      if (latestRes.isSuccess && latestRes.data != null) {
+        for (final m in latestRes.data!) {
+          _applyMeasurementToState(m);
+        }
+      }
+      final goalsRes = await api.getHealthGoals(isActive: true);
+      if (goalsRes.isSuccess && goalsRes.data != null) {
+        _healthGoals = goalsRes.data!.map(_mapApiGoalToLocal).toList();
+      }
+    } catch (e) {
+      debugPrint('Failed to load health data: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // Строим соответствие между нашими статическими типами (MeasurementTypes) и типами из БЭКа
+  void _buildMeasurementTypeIdMap(List<ApiMeasurementType> backendTypes) {
+    // Быстрый индекс по имени (RU)
+    final byName = <String, ApiMeasurementType>{
+      for (final t in backendTypes) t.name.toLowerCase(): t,
+    };
+    _measurementTypeIdMap.clear();
+    for (final local in MeasurementTypes.all) {
+      // Сначала по полному имени (RU)
+      var matched = byName[local.name.toLowerCase()];
+      // Если не нашли, попробуем по shortName (RU)
+      if (matched == null) {
+        final shortKey = local.shortName.toLowerCase();
+        final alt = backendTypes.where((t) => t.name.toLowerCase() == shortKey).toList();
+        if (alt.isNotEmpty) {
+          matched = alt.first;
+        }
+      }
+      if (matched != null) {
+        _measurementTypeIdMap[local.id] = matched.id;
+      }
+    }
   }
 
   @override
@@ -87,7 +133,12 @@ class _BodyPageState extends State<BodyPage> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  double get bmi => healthData['weight'] / math.pow(healthData['height'] / 100, 2);
+  double get bmi {
+    final w = healthData['weight'] as double?;
+    final h = healthData['height'] as double?;
+    if (w == null || h == null || h == 0) return 0.0;
+    return w / math.pow(h / 100, 2);
+  }
 
   String get bmiCategory {
     if (bmi < 18.5) return 'Недостаток веса';
@@ -101,6 +152,159 @@ class _BodyPageState extends State<BodyPage> with TickerProviderStateMixin {
     if (bmi < 25) return PRIMETheme.success;
     if (bmi < 30) return PRIMETheme.warn;
     return const Color(0xFFE53E3E);
+  }
+
+  HealthGoal _mapApiGoalToLocal(ApiHealthGoal g) {
+    HealthGoalType mapType(String s) {
+      switch (s) {
+        case 'WEIGHT':
+          return HealthGoalType.weight;
+        case 'BODY_FAT':
+          return HealthGoalType.bodyFat;
+        case 'MUSCLE':
+          return HealthGoalType.muscle;
+        case 'WAIST':
+          return HealthGoalType.waist;
+        case 'CHEST':
+          return HealthGoalType.chest;
+        case 'HIPS':
+          return HealthGoalType.hips;
+        case 'BICEPS':
+          return HealthGoalType.biceps;
+        case 'STEPS':
+          return HealthGoalType.steps;
+        case 'WATER':
+          return HealthGoalType.water;
+        case 'SLEEP':
+          return HealthGoalType.sleep;
+        case 'HEART_RATE':
+          return HealthGoalType.heartRate;
+        case 'BLOOD_PRESSURE':
+          return HealthGoalType.bloodPressure;
+        case 'CALORIES':
+          return HealthGoalType.calories;
+        default:
+          return HealthGoalType.weight;
+      }
+    }
+
+    HealthGoalPriority mapPriority(String s) {
+      switch (s) {
+        case 'LOW':
+          return HealthGoalPriority.low;
+        case 'HIGH':
+          return HealthGoalPriority.high;
+        case 'MEDIUM':
+        default:
+          return HealthGoalPriority.medium;
+      }
+    }
+
+    HealthGoalFrequency mapFrequency(String s) {
+      switch (s) {
+        case 'DAILY':
+          return HealthGoalFrequency.daily;
+        case 'MONTHLY':
+          return HealthGoalFrequency.monthly;
+        case 'YEARLY':
+          return HealthGoalFrequency.yearly;
+        case 'WEEKLY':
+        default:
+          return HealthGoalFrequency.weekly;
+      }
+    }
+
+    return HealthGoal(
+      id: g.id,
+      type: mapType(g.goalType),
+      title: g.title,
+      targetValue: g.targetValue,
+      currentValue: g.currentValue,
+      priority: mapPriority(g.priority),
+      frequency: mapFrequency(g.frequency),
+      startDate: g.startDate ?? DateTime.now(),
+      targetDate: g.targetDate,
+      notes: g.notes,
+      isActive: g.isActive,
+      createdAt: g.createdAt,
+      updatedAt: g.updatedAt,
+    );
+  }
+
+  void _applyMeasurementToState(ApiHealthMeasurement m) {
+    // Маппинг id типа -> поля локальной модели/карт
+    final typeId = m.typeId;
+    if (typeId == 'weight' || typeId == 'body_weight' || typeId == 'weight_kg' || typeId == 'WEIGHT') {
+      // Вес ожидается в кг
+      healthData['weight'] = m.value;
+    } else if (typeId == 'height' || typeId == 'height_cm' || typeId == 'HEIGHT' || typeId == 'body_height' || typeId == 'stature') {
+      // Рост: если значение похоже на метры (< 3.0), конвертируем в сантиметры
+      final raw = m.value;
+      final cm = raw < 3.0 ? raw * 100.0 : raw;
+      healthData['height'] = cm;
+    } else if (typeId == 'body_fat' || typeId == 'bodyFat') {
+      healthData['bodyFat'] = m.value;
+    } else if (typeId == 'muscle_mass' || typeId == 'muscle') {
+      healthData['muscle'] = m.value;
+    } else if (typeId == 'heart_rate' || typeId == 'heartRate') {
+      healthData['heartRate'] = m.value;
+    } else if (typeId == 'blood_pressure_systolic' || typeId == 'bp_systolic') {
+      final existing = (healthData['bloodPressure'] as Map<String, int>?) ?? {'systolic': 0, 'diastolic': 0};
+      existing['systolic'] = m.value.round();
+      healthData['bloodPressure'] = existing;
+    } else if (typeId == 'blood_pressure_diastolic' || typeId == 'bp_diastolic') {
+      final existing = (healthData['bloodPressure'] as Map<String, int>?) ?? {'systolic': 0, 'diastolic': 0};
+      existing['diastolic'] = m.value.round();
+      healthData['bloodPressure'] = existing;
+    } else if (typeId == 'sleep' || typeId == 'sleep_hours') {
+      healthData['sleep'] = m.value;
+    } else if (typeId == 'steps' || typeId == 'daily_steps') {
+      healthData['steps'] = m.value.round();
+    } else if (typeId == 'calories' || typeId == 'calories_burned') {
+      healthData['calories'] = m.value.round();
+    } else if (typeId == 'water' || typeId == 'water_intake_l') {
+      healthData['water'] = m.value;
+    } else if ({
+      'chest',
+      'waist',
+      'hips',
+      'biceps',
+      'thighs',
+      'neck',
+      'bicep_left',
+      'bicep_right',
+      'thigh_left',
+      'thigh_right',
+      'forearm_left',
+      'forearm_right',
+      'calf_left',
+      'calf_right',
+    }.contains(typeId)) {
+      // Нормализуем ключи для карты bodyMeasurements
+      final mapKey = _normalizeBodyKey(typeId);
+      if (mapKey != null) {
+        bodyMeasurements[mapKey] = m.value;
+      }
+    }
+  }
+
+  String? _normalizeBodyKey(String typeId) {
+    switch (typeId) {
+      case 'bicep_left':
+      case 'bicep_right':
+        return 'biceps';
+      case 'thigh_left':
+      case 'thigh_right':
+        return 'thighs';
+      case 'forearm_left':
+      case 'forearm_right':
+        return null; // нет отдельного поля, можно не агрегировать
+      case 'calf_left':
+      case 'calf_right':
+        return null;
+      default:
+        return typeId;
+    }
   }
 
   @override
@@ -119,32 +323,37 @@ class _BodyPageState extends State<BodyPage> with TickerProviderStateMixin {
                 children: [
                   // Заголовок
                   _Header(),
+                    if (_loading) ...[
+                      const SizedBox(height: 8),
+                      const LinearProgressIndicator(minHeight: 3),
+                      const SizedBox(height: 8),
+                    ],
                   const SizedBox(height: 24),
 
                   // Основные метрики
                   _MainMetrics(
-                    weight: healthData['weight'],
+                    weight: (healthData['weight'] as double?) ?? 0,
                     bmi: bmi,
                     bmiCategory: bmiCategory,
                     bmiColor: bmiColor,
-                    bodyFat: healthData['bodyFat'],
-                    muscle: healthData['muscle'],
+                    bodyFat: (healthData['bodyFat'] as double?) ?? 0,
+                    muscle: (healthData['muscle'] as double?) ?? 0,
                   ),
                   const SizedBox(height: 24),
 
                   // Витальные показатели
                   _VitalSigns(
-                    heartRate: healthData['heartRate'],
-                    bloodPressure: healthData['bloodPressure'],
-                    sleep: healthData['sleep'],
+                    heartRate: (healthData['heartRate'] as num?)?.toInt() ?? 0,
+                    bloodPressure: (healthData['bloodPressure'] as Map<String,int>?) ?? {'systolic': 0, 'diastolic': 0},
+                    sleep: (healthData['sleep'] as double?) ?? 0,
                   ),
                   const SizedBox(height: 24),
 
                   // Ежедневная активность
                   _DailyActivity(
-                    steps: healthData['steps'],
-                    calories: healthData['calories'],
-                    water: healthData['water'],
+                    steps: (healthData['steps'] as num?)?.toInt() ?? 0,
+                    calories: (healthData['calories'] as num?)?.toInt() ?? 0,
+                    water: (healthData['water'] as double?) ?? 0,
                     goals: goals,
                   ),
                   const SizedBox(height: 24),
@@ -192,6 +401,8 @@ class _BodyPageState extends State<BodyPage> with TickerProviderStateMixin {
               healthData['weight'] = measurements['weight'];
             }
           });
+          // Отправляем в API
+          _submitMeasurementsToApi(measurements);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Измерения добавлены! 📊'),
@@ -203,13 +414,82 @@ class _BodyPageState extends State<BodyPage> with TickerProviderStateMixin {
     );
   }
 
+  Future<void> _submitMeasurementsToApi(Map<String, double> values) async {
+    final api = ApiService.instance;
+    int skipped = 0;
+    for (final entry in values.entries) {
+      try {
+        // Преобразуем наш локальный ключ (например, 'waist') в реальный backend id
+        final backendTypeId = _measurementTypeIdMap[entry.key] ?? entry.key;
+        if (!_measurementTypeIdMap.containsKey(entry.key)) {
+          debugPrint('Skip sending unsupported measurement type: ${entry.key} (no backend mapping)');
+          // Пропускаем неподдерживаемые типы, чтобы не ловить P2003
+          skipped++;
+          continue;
+        }
+        final res = await api.createHealthMeasurement(
+          ApiHealthMeasurement(
+            id: 'local',
+            typeId: backendTypeId,
+            value: entry.value,
+            unit: null,
+            timestamp: DateTime.now(),
+            notes: null,
+          ),
+        );
+        if (!res.isSuccess) {
+          debugPrint('Failed to create measurement ${entry.key}: ${res.error}');
+        }
+      } catch (e) {
+        debugPrint('Error creating measurement ${entry.key}: $e');
+      }
+    }
+    if (skipped > 0 && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Некоторые типы не поддерживаются на сервере и были пропущены: $skipped'),
+          backgroundColor: PRIMETheme.warn,
+        ),
+      );
+    }
+  }
+
   void _showHistoryDialog() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => const MeasurementHistoryDialog(),
-    );
+    () async {
+      // Загружаем историю за 90 дней
+      final now = DateTime.now();
+      final start = now.subtract(const Duration(days: 90));
+      List<BodyMeasurement> initial = [];
+      try {
+        final res = await ApiService.instance.getHealthMeasurements(
+          startDate: start,
+          endDate: now,
+        );
+        if (res.isSuccess && res.data != null) {
+          initial = res.data!
+              .map((m) => BodyMeasurement(
+                    id: m.id,
+                    typeId: m.typeId,
+                    value: m.value,
+                    timestamp: m.timestamp,
+                    notes: m.notes,
+                  ))
+              .toList();
+        }
+      } catch (e) {
+        debugPrint('Failed to load measurement history: $e');
+      }
+
+      if (!mounted) return;
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        builder: (context) => MeasurementHistoryDialog(
+          initialMeasurements: initial,
+        ),
+      );
+    }();
   }
 
   void _showGoalsDialog() {
@@ -319,7 +599,6 @@ class _MainMetrics extends StatelessWidget {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 400;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -332,90 +611,78 @@ class _MainMetrics extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         
-        // Главная карточка BMI
+        // Карточка с BMI и весом
         Container(
-          width: double.infinity,
-          padding: EdgeInsets.all(isSmallScreen ? 16 : 24),
+          padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                bmiColor.withOpacity(0.15),
-                bmiColor.withOpacity(0.05),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: bmiColor.withOpacity(0.3)),
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: PRIMETheme.line),
           ),
-          child: Column(
+          child: Row(
             children: [
-              Row(
+              Container(
+                padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+                decoration: BoxDecoration(
+                  color: bmiColor.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(
+                  Icons.monitor_weight,
+                  color: bmiColor,
+                  size: isSmallScreen ? 24 : 32,
+                ),
+              ),
+              SizedBox(width: isSmallScreen ? 12 : 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Индекс массы тела',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontSize: isSmallScreen ? 14 : 16,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      bmiCategory,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: bmiColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: isSmallScreen ? 12 : 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Container(
-                    padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
-                    decoration: BoxDecoration(
-                      color: bmiColor.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Icon(
-                      Icons.monitor_weight,
+                  Text(
+                    '${weight.toStringAsFixed(1)} кг',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                       color: bmiColor,
-                      size: isSmallScreen ? 24 : 32,
+                      fontWeight: FontWeight.bold,
+                      fontSize: isSmallScreen ? 20 : 24,
                     ),
                   ),
-                  SizedBox(width: isSmallScreen ? 12 : 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Индекс массы тела',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontSize: isSmallScreen ? 14 : 16,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          bmiCategory,
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: bmiColor,
-                            fontWeight: FontWeight.bold,
-                            fontSize: isSmallScreen ? 12 : 14,
-                          ),
-                        ),
-                      ],
+                  Text(
+                    'BMI ${bmi.toStringAsFixed(1)}',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: PRIMETheme.sandWeak,
+                      fontSize: isSmallScreen ? 12 : 14,
                     ),
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        '${weight.toStringAsFixed(1)} кг',
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          color: bmiColor,
-                          fontWeight: FontWeight.bold,
-                          fontSize: isSmallScreen ? 20 : 24,
-                        ),
-                      ),
-                      Text(
-                        'BMI ${bmi.toStringAsFixed(1)}',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: PRIMETheme.sandWeak,
-                          fontSize: isSmallScreen ? 12 : 14,
-                        ),
-                      ),
-                    ],
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              
-              // Прогресс бар BMI
-              _BMIProgressBar(bmi: bmi, bmiColor: bmiColor),
             ],
           ),
         ),
+        const SizedBox(height: 16),
+        
+        // Прогресс бар BMI
+        _BMIProgressBar(bmi: bmi, bmiColor: bmiColor),
         const SizedBox(height: 16),
         
         // Композиция тела
@@ -427,7 +694,7 @@ class _MainMetrics extends StatelessWidget {
                 value: '${bodyFat.toStringAsFixed(1)}%',
                 icon: Icons.water_drop,
                 color: const Color(0xFFFF7043),
-                progress: bodyFat / 25,
+                progress: (bodyFat / 25).clamp(0.0, 1.0),
                 isCompact: isSmallScreen,
               ),
             ),
@@ -438,7 +705,7 @@ class _MainMetrics extends StatelessWidget {
                 value: '${muscle.toStringAsFixed(1)} кг',
                 icon: Icons.fitness_center,
                 color: PRIMETheme.success,
-                progress: muscle / 80,
+                progress: (muscle / 80).clamp(0.0, 1.0),
                 isCompact: isSmallScreen,
               ),
             ),
@@ -471,10 +738,26 @@ class _BMIProgressBarState extends State<_BMIProgressBar>
       duration: const Duration(milliseconds: 1500),
       vsync: this,
     );
-    _animation = Tween<double>(begin: 0, end: widget.bmi / 35).animate(
+    final target = ((widget.bmi - 15) / (35 - 15)).clamp(0.0, 1.0);
+    _animation = Tween<double>(begin: 0, end: target).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
     );
     _controller.forward();
+  }
+
+  @override
+  void didUpdateWidget(covariant _BMIProgressBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.bmi != widget.bmi) {
+      final target = ((widget.bmi - 15) / (35 - 15)).clamp(0.0, 1.0);
+      _animation = Tween<double>(begin: _animation.value, end: target).animate(
+        CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
+      );
+      _controller
+        ..stop()
+        ..forward(from: 0);
+      setState(() {});
+    }
   }
 
   @override
@@ -539,12 +822,16 @@ class _BMIBarPainter extends CustomPainter {
       paint,
     );
 
-    // Цветные зоны BMI
+    // Цветные зоны BMI в диапазоне 15–35 (нормализовано к 0..1)
+    // Границы: <18.5 (дефицит), 18.5–25 (норма), 25–30 (избыток), >30 (ожирение)
+    const minBmi = 15.0;
+    const maxBmi = 35.0;
+    double nz(double v) => ((v - minBmi) / (maxBmi - minBmi)).clamp(0.0, 1.0);
     final zones = [
-      {'start': 0.0, 'end': 0.529, 'color': PRIMETheme.warn}, // < 18.5
-      {'start': 0.529, 'end': 0.714, 'color': PRIMETheme.success}, // 18.5-25
-      {'start': 0.714, 'end': 0.857, 'color': PRIMETheme.warn}, // 25-30
-      {'start': 0.857, 'end': 1.0, 'color': const Color(0xFFE53E3E)}, // > 30
+      {'start': nz(15.0), 'end': nz(18.5), 'color': PRIMETheme.warn},
+      {'start': nz(18.5), 'end': nz(25.0), 'color': PRIMETheme.success},
+      {'start': nz(25.0), 'end': nz(30.0), 'color': PRIMETheme.warn},
+      {'start': nz(30.0), 'end': nz(35.0), 'color': const Color(0xFFE53E3E)},
     ];
 
     for (final zone in zones) {
@@ -1024,6 +1311,19 @@ class _DailyActivity extends StatelessWidget {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 400;
 
+    // Безопасное извлечение целей из карты goals
+    int stepsTarget = 10000; // дефолт
+    if (goals['steps'] is Map && (goals['steps'] as Map)['target'] != null) {
+      final v = (goals['steps'] as Map)['target'];
+      if (v is num) stepsTarget = v.toInt();
+    }
+
+    int waterTargetMl = 2000; // 2л по умолчанию
+    if (goals['water'] is Map && (goals['water'] as Map)['target'] != null) {
+      final v = (goals['water'] as Map)['target'];
+      if (v is num) waterTargetMl = (v * 1000).toInt();
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1042,7 +1342,7 @@ class _DailyActivity extends StatelessWidget {
               child: _ActivityCard(
                 title: 'Шаги',
                 value: steps,
-                target: goals['steps']['target'],
+                target: stepsTarget,
                 icon: Icons.directions_walk,
                 color: const Color(0xFF4FC3F7),
                 unit: '',
@@ -1068,7 +1368,7 @@ class _DailyActivity extends StatelessWidget {
         _ActivityCard(
           title: 'Вода',
           value: (water * 1000).toInt(),
-          target: (goals['water']['target'] * 1000).toInt(),
+          target: waterTargetMl,
           icon: Icons.water_drop,
           color: const Color(0xFF42A5F5),
           unit: 'мл',
@@ -1135,9 +1435,6 @@ class _ActivityCardState extends State<_ActivityCard>
 
   @override
   Widget build(BuildContext context) {
-    final progress = (widget.value / widget.target).clamp(0.0, 1.0);
-    final isCompleted = progress >= 1.0;
-
     return Container(
       padding: EdgeInsets.all(widget.isCompact ? 12 : 16),
       decoration: BoxDecoration(
@@ -1157,8 +1454,7 @@ class _ActivityCardState extends State<_ActivityCard>
   }
 
   Widget _buildCompactLayout() {
-    final progress = (widget.value / widget.target).clamp(0.0, 1.0);
-    final isCompleted = progress >= 1.0;
+    final isCompleted = (widget.value / widget.target) >= 1.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1441,7 +1737,7 @@ class _BodyMeasurements extends StatelessWidget {
                   Expanded(
                     child: _MeasurementItem(
                       title: 'Грудь',
-                      value: measurements['chest']!,
+                      value: measurements['chest'] ?? 0.0,
                       icon: Icons.fitness_center,
                       isCompact: isSmallScreen,
                     ),
@@ -1450,7 +1746,7 @@ class _BodyMeasurements extends StatelessWidget {
                   Expanded(
                     child: _MeasurementItem(
                       title: 'Талия',
-                      value: measurements['waist']!,
+                      value: measurements['waist'] ?? 0.0,
                       icon: Icons.straighten,
                       isCompact: isSmallScreen,
                     ),
@@ -1459,7 +1755,7 @@ class _BodyMeasurements extends StatelessWidget {
                   Expanded(
                     child: _MeasurementItem(
                       title: 'Бедра',
-                      value: measurements['hips']!,
+                      value: measurements['hips'] ?? 0.0,
                       icon: Icons.accessibility,
                       isCompact: isSmallScreen,
                     ),
@@ -1474,7 +1770,7 @@ class _BodyMeasurements extends StatelessWidget {
                   Expanded(
                     child: _MeasurementItem(
                       title: 'Бицепс',
-                      value: measurements['biceps']!,
+                      value: measurements['biceps'] ?? 0.0,
                       icon: Icons.sports_martial_arts,
                       isCompact: isSmallScreen,
                     ),
@@ -1483,7 +1779,7 @@ class _BodyMeasurements extends StatelessWidget {
                   Expanded(
                     child: _MeasurementItem(
                       title: 'Бедро',
-                      value: measurements['thighs']!,
+                      value: measurements['thighs'] ?? 0.0,
                       icon: Icons.directions_run,
                       isCompact: isSmallScreen,
                     ),
@@ -1492,7 +1788,7 @@ class _BodyMeasurements extends StatelessWidget {
                   Expanded(
                     child: _MeasurementItem(
                       title: 'Шея',
-                      value: measurements['neck']!,
+                      value: measurements['neck'] ?? 0.0,
                       icon: Icons.person,
                       isCompact: isSmallScreen,
                     ),
@@ -1830,54 +2126,7 @@ class _ActionButtons extends StatelessWidget {
 }
 
 
-class _HistorySheet extends StatelessWidget {
-  final Map<String, dynamic> healthData;
-
-  const _HistorySheet({required this.healthData});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.8,
-      decoration: const BoxDecoration(
-        color: PRIMETheme.bg,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: const Center(
-        child: Text(
-          'История измерений\n(в разработке)',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: PRIMETheme.sand),
-        ),
-      ),
-    );
-  }
-}
-
-class _GoalsSheet extends StatelessWidget {
-  final Map<String, dynamic> goals;
-  final Function(Map<String, dynamic>) onGoalsUpdated;
-
-  const _GoalsSheet({required this.goals, required this.onGoalsUpdated});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.8,
-      decoration: const BoxDecoration(
-        color: PRIMETheme.bg,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: const Center(
-        child: Text(
-          'Настройка целей\n(в разработке)',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: PRIMETheme.sand),
-        ),
-      ),
-    );
-  }
-}
+// Удалены Placeholder-виджеты _HistorySheet и _GoalsSheet, так как заменены реальными диалогами
 
 class _AnalyticsButton extends StatefulWidget {
   final VoidCallback onPressed;
@@ -2024,6 +2273,35 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
 
   int _selectedTab = 0;
   final List<String> _tabs = ['Обзор', 'Тренды', 'Достижения'];
+  // API аналитика
+  bool _loading = true;
+  String? _error;
+  Map<String, dynamic>? _stats;
+  List<Map<String, dynamic>> _achievements = [];
+  List<ApiHealthGoal> _apiGoals = [];
+  int _periodDays = 30; // период для трендов/статистики
+  final Map<String, List<double>> _trendFallback = {}; // фолбэк ряды
+
+  // Нормализация ключей трендов: поддерживаем EN и RU синонимы
+  String? _matchTrendKey(String keyword, Map<String, dynamic> trends) {
+    final syn = <String, List<String>>{
+      'weight': ['weight', 'вес'],
+      'height': ['height', 'рост'],
+      'heart_rate': ['heart_rate', 'пульс'],
+      'body_fat': ['body_fat', 'жир'],
+      'water': ['water', 'вода'], // из health: 'Вода в организме' (процент)
+      'sleep': ['sleep', 'сон'],
+      'bmi': ['bmi', 'имт', 'индекс'],
+      'steps': ['steps', 'шаги'],
+    };
+    final candidates = syn[keyword.toLowerCase()] ?? [keyword.toLowerCase()];
+    String? found;
+    for (final k in trends.keys) {
+      final lk = k.toString().toLowerCase();
+      if (candidates.any((c) => lk.contains(c))) { found = k; break; }
+    }
+    return found;
+  }
 
   @override
   void initState() {
@@ -2046,8 +2324,9 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
       CurvedAnimation(parent: _chartController, curve: Curves.easeOutQuart),
     );
 
-    _slideController.forward();
-    _chartController.forward();
+  _slideController.forward();
+  _chartController.forward();
+  _loadAnalytics();
   }
 
   @override
@@ -2055,6 +2334,149 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
     _slideController.dispose();
     _chartController.dispose();
     super.dispose();
+  }
+
+  Widget _buildError() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.error_outline, color: PRIMETheme.warn),
+          const SizedBox(height: 8),
+          Text(_error ?? 'Ошибка загрузки', style: Theme.of(context).textTheme.bodyMedium),
+          const SizedBox(height: 8),
+          ElevatedButton(onPressed: _loadAnalytics, child: const Text('Повторить')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _loadAnalytics() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final api = ApiService.instance;
+      final now = DateTime.now();
+      final start = now.subtract(Duration(days: _periodDays));
+      final statsRes = await api.getHealthStats(startDate: start, endDate: now);
+  final achRes = await api.getHealthAchievements();
+      final goalsRes = await api.getHealthGoals(isActive: true);
+      if (!statsRes.isSuccess) { throw Exception(statsRes.error ?? 'Ошибка stats'); }
+      // Подготовим фолбэк для ключевых трендов, если их нет в stats
+      final statsData = statsRes.data ?? {};
+      final trends = statsData['trends'] as Map<String, dynamic>?;
+      final needKeys = <String, String>{
+        'weight': 'weight',
+        'heart_rate': 'heart_rate',
+        'body_fat': 'body_fat',
+        'water': 'water_percent',
+      };
+      final futures = <Future>[];
+      final localFallback = <String, List<double>>{};
+      for (final entry in needKeys.entries) {
+        final k = entry.key;
+        final slug = entry.value;
+        bool hasTrend = false;
+        if (trends != null) {
+          final key = _matchTrendKey(k, trends);
+          hasTrend = key != null && key.isNotEmpty && trends[key] is List && (trends[key] as List).isNotEmpty;
+        }
+        if (!hasTrend) {
+          futures.add(api.getMeasurementHistory(typeId: slug, days: _periodDays).then((res) {
+            if (res.isSuccess && res.data != null && res.data!.isNotEmpty) {
+              localFallback[k] = res.data!.map((m) => m.value).toList();
+            }
+          }));
+        }
+      }
+      if (futures.isNotEmpty) {
+        await Future.wait(futures);
+      }
+      setState(() {
+        _stats = statsData;
+        _trendFallback
+          ..clear()
+          ..addAll(localFallback);
+        // Преобразуем достижения к UI-модели с цветами/иконками/датой
+        final src = achRes.isSuccess && achRes.data != null ? achRes.data! : <Map<String, dynamic>>[];
+        _achievements = src.map<Map<String, dynamic>>((a) {
+          final type = (a['type'] ?? '').toString();
+          Color color;
+          IconData icon;
+          switch (type) {
+            case 'first_measurement':
+              color = PRIMETheme.primary; icon = Icons.monitor_weight; break;
+            case 'consistent_tracking':
+              color = PRIMETheme.success; icon = Icons.trending_up; break;
+            case 'goal_completed':
+              color = const Color(0xFFFFC107); icon = Icons.emoji_events; break;
+            default:
+              color = PRIMETheme.sand; icon = Icons.star;
+          }
+          String dateStr = '—';
+          final earnedAt = a['earnedAt']?.toString();
+          if (earnedAt != null) {
+            final dt = DateTime.tryParse(earnedAt);
+            if (dt != null) {
+              final d = dt.toLocal();
+              dateStr = '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}';
+            }
+          }
+          return {
+            'type': type,
+            'title': a['title'] ?? 'Достижение',
+            'description': a['description'] ?? '',
+            'date': dateStr,
+            'color': color,
+            'icon': icon,
+          };
+        }).toList();
+        _apiGoals = goalsRes.isSuccess && goalsRes.data != null ? goalsRes.data! : [];
+      });
+    } catch (e) {
+      setState(() { _error = 'Не удалось загрузить аналитику: $e'; });
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  List<double> _trendValuesFor(String keyword) {
+    final trends = _stats != null ? _stats!['trends'] as Map<String, dynamic>? : null;
+    if (trends != null) {
+      final key = _matchTrendKey(keyword, trends);
+      if (key != null && key.isNotEmpty) {
+        final list = trends[key];
+        if (list is List) {
+          return list.map<double>((e) {
+            final v = (e is Map && e['value'] != null) ? e['value'] : e;
+            return (v as num).toDouble();
+          }).toList();
+        }
+      }
+    }
+    // Если есть фолбэк — используем его
+    final fb = _trendFallback[keyword];
+    if (fb != null && fb.isNotEmpty) return fb;
+    // Фолбэк: если трендов нет — строим из истории измерений
+    // Поддерживаем ключевые метрики: weight, heart_rate, sleep, steps, water, body_fat
+    final typeSlugByKey = <String, String>{
+      'weight': 'weight',
+      'heart_rate': 'heart_rate',
+      'sleep': 'sleep',
+      'steps': 'steps',
+      'water': 'water_percent', // тренд по воде может быть в %, но используем как есть
+      'body_fat': 'body_fat',
+    };
+    final resolvedKey = typeSlugByKey[keyword] ?? keyword;
+    // Ищем последние значения в healthData как крайний случай
+    final local = widget.healthData[resolvedKey];
+    if (local is List<double>) return local;
+    if (local is num) return [local.toDouble()];
+    return [];
+  }
+
+  double? _latestValueFor(String keyword) {
+    final arr = _trendValuesFor(keyword);
+    return arr.isNotEmpty ? arr.last : null;
   }
 
   @override
@@ -2077,7 +2499,9 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
             
             // Контент
             Expanded(
-              child: _buildTabContent(),
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : (_error != null ? _buildError() : _buildTabContent()),
             ),
           ],
         ),
@@ -2324,63 +2748,77 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
           ),
         ),
         const SizedBox(height: 16),
-        
-        Row(
-          children: [
-            Expanded(
-              child: _buildMetricChart(
-                title: 'BMI',
-                value: widget.healthData['weight'] / math.pow(widget.healthData['height'] / 100, 2),
-                unit: '',
-                color: PRIMETheme.primary,
-                icon: Icons.monitor_weight,
-                min: 18,
-                max: 30,
+        // Безопасно рассчитываем значения метрик
+        // Используем последние значения там, где возможно, и дефолты при отсутствии
+        Builder(builder: (context) {
+          final weight = (_latestValueFor('weight') ?? (widget.healthData['weight'] as num?))?.toDouble() ?? 0.0;
+          final height = (_latestValueFor('height') ?? (widget.healthData['height'] as num?))?.toDouble() ?? 0.0; // см
+          final bmi = (weight > 0 && height > 0)
+              ? weight / math.pow(height / 100.0, 2)
+              : 0.0;
+          final heartRate = (widget.healthData['heartRate'] as num?)?.toDouble() ?? 0.0;
+          final bodyFat = (widget.healthData['bodyFat'] as num?)?.toDouble() ?? 0.0;
+          final sleep = (widget.healthData['sleep'] as num?)?.toDouble() ?? (_latestValueFor('sleep') ?? 0.0);
+          return Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildMetricChart(
+                      title: 'BMI',
+                      value: bmi,
+                      unit: '',
+                      color: PRIMETheme.primary,
+                      icon: Icons.monitor_weight,
+                      min: 18,
+                      max: 30,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildMetricChart(
+                      title: 'Пульс',
+                      value: heartRate,
+                      unit: 'уд/мин',
+                      color: const Color(0xFFE53E3E),
+                      icon: Icons.favorite,
+                      min: 60,
+                      max: 100,
+                    ),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildMetricChart(
-                title: 'Пульс',
-                value: widget.healthData['heartRate'].toDouble(),
-                unit: 'уд/мин',
-                color: const Color(0xFFE53E3E),
-                icon: Icons.favorite,
-                min: 60,
-                max: 100,
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildMetricChart(
+                      title: 'Жир',
+                      value: bodyFat,
+                      unit: '%',
+                      color: const Color(0xFFFF7043),
+                      icon: Icons.water_drop,
+                      min: 10,
+                      max: 25,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildMetricChart(
+                      title: 'Сон',
+                      value: sleep,
+                      unit: 'ч',
+                      color: const Color(0xFF9C27B0),
+                      icon: Icons.bedtime,
+                      min: 6,
+                      max: 10,
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        
-        Row(
-          children: [
-            Expanded(
-              child: _buildMetricChart(
-                title: 'Жир',
-                value: widget.healthData['bodyFat'],
-                unit: '%',
-                color: const Color(0xFFFF7043),
-                icon: Icons.water_drop,
-                min: 10,
-                max: 25,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildMetricChart(
-                title: 'Сон',
-                value: widget.healthData['sleep'],
-                unit: 'ч',
-                color: const Color(0xFF9C27B0),
-                icon: Icons.bedtime,
-                min: 6,
-                max: 10,
-              ),
-            ),
-          ],
-        ),
+            ],
+          );
+        }),
       ],
     );
   }
@@ -2473,8 +2911,20 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
             Expanded(
               child: _buildCircularChart(
                 title: 'Шаги',
-                current: widget.healthData['steps'],
-                target: widget.goals['steps']['target'],
+                current: (() {
+                  final latest = _latestValueFor('steps');
+                  final hd = widget.healthData['steps'] as int?;
+                  return (latest?.round() ?? hd ?? 0);
+                })(),
+                target: (() {
+                  ApiHealthGoal? goal;
+                  try {
+                    goal = _apiGoals.firstWhere((g) => g.goalType == 'STEPS');
+                  } catch (_) {
+                    goal = null;
+                  }
+                  return goal != null ? goal.targetValue.round() : 0;
+                })(),
                 color: const Color(0xFF4FC3F7),
                 icon: Icons.directions_walk,
                 unit: '',
@@ -2484,8 +2934,22 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
             Expanded(
               child: _buildCircularChart(
                 title: 'Вода',
-                current: (widget.healthData['water'] * 1000).toInt(),
-                target: (widget.goals['water']['target'] * 1000).toInt(),
+                current: (() {
+                  final latest = _latestValueFor('water');
+                  final hd = widget.healthData['water'] as double?; // литры
+                  final liters = latest ?? hd ?? 0.0;
+                  return (liters * 1000).round();
+                })(),
+                target: (() {
+                  ApiHealthGoal? goal;
+                  try {
+                    goal = _apiGoals.firstWhere((g) => g.goalType == 'WATER');
+                  } catch (_) {
+                    goal = null;
+                  }
+                  final liters = goal?.targetValue ?? 0.0;
+                  return (liters * 1000).round();
+                })(),
                 color: const Color(0xFF42A5F5),
                 icon: Icons.water_drop,
                 unit: 'мл',
@@ -2505,7 +2969,8 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
     required IconData icon,
     required String unit,
   }) {
-    final progress = (current / target).clamp(0.0, 1.0);
+    final safeTarget = target <= 0 ? 1 : target;
+    final progress = (current / safeTarget).clamp(0.0, 1.0);
     
     return Container(
       padding: const EdgeInsets.all(20),
@@ -2645,7 +3110,11 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
     double score = 0;
     
     // BMI score (25%)
-    final bmi = widget.healthData['weight'] / math.pow(widget.healthData['height'] / 100, 2);
+    final weight = (_latestValueFor('weight') ?? (widget.healthData['weight'] as num?))?.toDouble() ?? 0.0;
+    final height = (widget.healthData['height'] as num?)?.toDouble() ?? 0.0; // см
+    final bmi = (height > 0)
+        ? (weight / math.pow(height / 100, 2))
+        : 0.0;
     if (bmi >= 18.5 && bmi <= 25) {
       score += 25;
     } else if (bmi >= 17 && bmi <= 30) {
@@ -2655,7 +3124,7 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
     }
     
     // Heart rate score (20%)
-    final heartRate = widget.healthData['heartRate'];
+  final heartRate = (widget.healthData['heartRate'] as num?)?.toDouble() ?? 0.0;
     if (heartRate >= 60 && heartRate <= 100) {
       score += 20;
     } else if (heartRate >= 50 && heartRate <= 110) {
@@ -2665,7 +3134,7 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
     }
     
     // Sleep score (20%)
-    final sleep = widget.healthData['sleep'];
+  final sleep = (widget.healthData['sleep'] as num?)?.toDouble() ?? (_latestValueFor('sleep') ?? 0.0);
     if (sleep >= 7 && sleep <= 9) {
       score += 20;
     } else if (sleep >= 6 && sleep <= 10) {
@@ -2675,13 +3144,19 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
     }
     
     // Activity score (20%)
-    final steps = widget.healthData['steps'];
-    final stepsTarget = widget.goals['steps']['target'];
-    final stepsProgress = (steps / stepsTarget).clamp(0.0, 1.0);
+    final steps = (_latestValueFor('steps') ?? (widget.healthData['steps'] as num? ?? 0)).toDouble();
+    double stepsTarget = 10000; // дефолт
+    try {
+      final g = _apiGoals.firstWhere((g) => g.goalType == 'STEPS');
+      stepsTarget = g.targetValue;
+    } catch (_) {
+      // если цели нет — используем дефолт
+    }
+    final stepsProgress = stepsTarget > 0 ? (steps / stepsTarget).clamp(0.0, 1.0) : 0.0;
     score += 20 * stepsProgress;
     
     // Body fat score (15%)
-    final bodyFat = widget.healthData['bodyFat'];
+  final bodyFat = (widget.healthData['bodyFat'] as num?)?.toDouble() ?? 0.0;
     if (bodyFat >= 10 && bodyFat <= 20) {
       score += 15;
     } else if (bodyFat >= 8 && bodyFat <= 25) {
@@ -2714,7 +3189,7 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
           ),
         ),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
@@ -2724,21 +3199,25 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
             ),
             borderRadius: BorderRadius.circular(20),
           ),
-          child: const Row(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.calendar_month,
-                color: Colors.white,
-                size: 16,
-              ),
-              SizedBox(width: 4),
-              Text(
-                '30 дней',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
+              const Icon(Icons.calendar_month, color: Colors.white, size: 16),
+              const SizedBox(width: 4),
+              DropdownButtonHideUnderline(
+                child: DropdownButton<int>(
+                  value: _periodDays,
+                  dropdownColor: PRIMETheme.primary,
+                  iconEnabledColor: Colors.white,
+                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                  items: const [7,14,30,90]
+                      .map((d) => DropdownMenuItem<int>(value: d, child: Text('$d дней')))
+                      .toList(),
+                  onChanged: (val) {
+                    if (val == null) return;
+                    setState(() { _periodDays = val; });
+                    _loadAnalytics();
+                  },
                 ),
               ),
             ],
@@ -2749,8 +3228,16 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
   }
 
   Widget _buildWeightTrendChart() {
-    // Генерируем данные веса за 30 дней
-    final weightData = _generateWeightTrendData();
+    // Данные веса из API трендов за 30 дней
+    final weightData = _trendValuesFor('weight');
+    final hasData = weightData.isNotEmpty;
+    final String deltaStr = (() {
+      if (!hasData) return '—';
+      if (weightData.length < 2) return '0.0 кг';
+      final delta = weightData.last - weightData.first;
+      final sign = delta >= 0 ? '+' : '';
+      return '$sign${delta.toStringAsFixed(1)} кг';
+    })();
     
     return Container(
       padding: const EdgeInsets.all(20),
@@ -2807,9 +3294,9 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
                   color: PRIMETheme.success,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Text(
-                  '-1.2 кг',
-                  style: TextStyle(
+                child: Text(
+                  deltaStr,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -2821,38 +3308,55 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
           const SizedBox(height: 16),
           
           // График веса
-          SizedBox(
-            height: 120,
-            child: CustomPaint(
-              size: const Size(double.infinity, 120),
-              painter: _WeightTrendPainter(
-                data: weightData,
-                animation: _chartAnimation.value,
+          if (hasData)
+            SizedBox(
+              height: 120,
+              child: CustomPaint(
+                size: const Size(double.infinity, 120),
+                painter: _WeightTrendPainter(
+                  data: weightData,
+                  animation: _chartAnimation.value,
+                ),
               ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Text('Нет данных для выбранного периода', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: PRIMETheme.sandWeak)),
             ),
-          ),
           
           const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Мин: ${weightData.reduce(math.min).toStringAsFixed(1)} кг',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              Text(
-                'Макс: ${weightData.reduce(math.max).toStringAsFixed(1)} кг',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ),
+          if (hasData)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Мин: ${weightData.reduce(math.min).toStringAsFixed(1)} кг',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                Text(
+                  'Макс: ${weightData.reduce(math.max).toStringAsFixed(1)} кг',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
         ],
       ),
     );
   }
 
   Widget _buildBMITrendChart() {
-    final bmiData = _generateBMITrendData();
+    // Данные BMI из API трендов; если нет — рассчитываем из веса и текущего роста
+    List<double> bmiData = _trendValuesFor('bmi');
+    if (bmiData.isEmpty) {
+      final weightData = _trendValuesFor('weight');
+      final height = widget.healthData['height'] as double?; // см
+      if (weightData.isNotEmpty && (height != null && height > 0)) {
+        final h = height / 100;
+        bmiData = weightData.map((w) => w / math.pow(h, 2)).toList();
+      }
+    }
+    final hasData = bmiData.isNotEmpty;
     
     return Container(
       padding: const EdgeInsets.all(20),
@@ -2904,7 +3408,7 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
                 ),
               ),
               Text(
-                bmiData.last.toStringAsFixed(1),
+                hasData ? bmiData.last.toStringAsFixed(1) : '—',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   color: PRIMETheme.success,
                   fontWeight: FontWeight.bold,
@@ -2914,23 +3418,36 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
           ),
           const SizedBox(height: 16),
           
-          SizedBox(
-            height: 100,
-            child: CustomPaint(
-              size: const Size(double.infinity, 100),
-              painter: _BMITrendPainter(
-                data: bmiData,
-                animation: _chartAnimation.value,
+          if (hasData)
+            SizedBox(
+              height: 100,
+              child: CustomPaint(
+                size: const Size(double.infinity, 100),
+                painter: _BMITrendPainter(
+                  data: bmiData,
+                  animation: _chartAnimation.value,
+                ),
               ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Text('Нет данных для BMI', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: PRIMETheme.sandWeak)),
             ),
-          ),
         ],
       ),
     );
   }
 
   Widget _buildActivityTrendChart() {
-    final stepsData = _generateStepsTrendData();
+    // Шаги за последние 7 дней из трендов API
+    var stepsData = _trendValuesFor('steps').map((e) => e.round()).toList();
+    if (stepsData.length > 7) {
+      stepsData = stepsData.sublist(stepsData.length - 7);
+    }
+    final avg = stepsData.isNotEmpty
+        ? (stepsData.reduce((a, b) => a + b) / stepsData.length).toInt()
+        : 0;
     
     return Container(
       padding: const EdgeInsets.all(20),
@@ -2982,7 +3499,7 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
                 ),
               ),
               Text(
-                '${(stepsData.reduce((a, b) => a + b) / 7).toInt()}',
+                '$avg',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   color: const Color(0xFF4FC3F7),
                   fontWeight: FontWeight.bold,
@@ -3032,7 +3549,7 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      dayNames[index],
+                      dayNames[index % dayNames.length],
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         fontSize: 10,
                         color: PRIMETheme.sandWeak,
@@ -3049,7 +3566,11 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
   }
 
   Widget _buildSleepTrendChart() {
-    final sleepData = _generateSleepTrendData();
+    final sleepData = _trendValuesFor('sleep');
+    final hasData = sleepData.isNotEmpty;
+    final avgText = hasData
+        ? 'Среднее: ${(sleepData.reduce((a, b) => a + b) / sleepData.length).toStringAsFixed(1)}ч'
+        : 'Нет данных';
     
     return Container(
       padding: const EdgeInsets.all(20),
@@ -3092,7 +3613,7 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
                       ),
                     ),
                     Text(
-                      'Среднее: ${(sleepData.reduce((a, b) => a + b) / sleepData.length).toStringAsFixed(1)}ч',
+                      avgText,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: PRIMETheme.sandWeak,
                       ),
@@ -3119,22 +3640,71 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
           ),
           const SizedBox(height: 16),
           
-          SizedBox(
-            height: 80,
-            child: CustomPaint(
-              size: const Size(double.infinity, 80),
-              painter: _SleepTrendPainter(
-                data: sleepData,
-                animation: _chartAnimation.value,
+          if (hasData)
+            SizedBox(
+              height: 80,
+              child: CustomPaint(
+                size: const Size(double.infinity, 80),
+                painter: _SleepTrendPainter(
+                  data: sleepData,
+                  animation: _chartAnimation.value,
+                ),
               ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Text('Нет данных по сну', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: PRIMETheme.sandWeak)),
             ),
-          ),
         ],
       ),
     );
   }
 
   Widget _buildComparisonAnalysis() {
+    // Берем текущий диапазон трендов и сравниваем с таким же предыдущим периодом
+    final trends = _stats != null ? _stats!['trends'] as Map<String, dynamic>? : null;
+    String formatDelta(num delta, {String unit = ''}) {
+      final sign = delta >= 0 ? '+' : '';
+      return '$sign${delta.toStringAsFixed(unit.isEmpty ? 0 : 1)}${unit.isNotEmpty ? ' $unit' : ''}';
+    }
+    String weightDelta = '—';
+    String stepsDelta = '—';
+    String sleepDelta = '—';
+    final days = _periodDays;
+    if (trends != null) {
+      final w = _trendValuesFor('weight');
+      if (w.length >= days * 2) {
+        final prev = w.sublist(w.length - days * 2, w.length - days);
+        final curr = w.sublist(w.length - days);
+        final delta = (curr.last - curr.first) - (prev.last - prev.first);
+        weightDelta = formatDelta(delta, unit: 'кг');
+      } else if (w.length >= 2) {
+        final delta = w.last - w.first;
+        weightDelta = formatDelta(delta, unit: 'кг');
+      }
+
+      final s = _trendValuesFor('steps');
+      if (s.length >= days * 2) {
+        final prev = s.sublist(s.length - days * 2, s.length - days);
+        final curr = s.sublist(s.length - days);
+        final delta = (curr.reduce((a,b)=>a+b)/curr.length) - (prev.reduce((a,b)=>a+b)/prev.length);
+        stepsDelta = formatDelta(delta.round());
+      } else if (s.isNotEmpty) {
+        stepsDelta = formatDelta(((s.reduce((a,b)=>a+b))/s.length).round());
+      }
+
+      final sl = _trendValuesFor('sleep');
+      if (sl.length >= days * 2) {
+        final prev = sl.sublist(sl.length - days * 2, sl.length - days);
+        final curr = sl.sublist(sl.length - days);
+        final delta = (curr.reduce((a,b)=>a+b)/curr.length) - (prev.reduce((a,b)=>a+b)/prev.length);
+        sleepDelta = formatDelta(delta, unit: 'ч');
+      } else if (sl.isNotEmpty) {
+        sleepDelta = formatDelta((sl.reduce((a,b)=>a+b)/sl.length), unit: 'ч');
+      }
+    }
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -3158,29 +3728,11 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
           ),
           const SizedBox(height: 16),
           
-          _buildComparisonItem(
-            'Этот месяц vs прошлый',
-            'Вес',
-            '-1.2 кг',
-            PRIMETheme.success,
-            Icons.trending_down,
-          ),
+          _buildComparisonItem('Текущий период vs предыдущий', 'Вес', weightDelta, PRIMETheme.success, Icons.monitor_weight),
           const SizedBox(height: 12),
-          _buildComparisonItem(
-            'Средняя активность',
-            'Шаги',
-            '+847 шагов',
-            PRIMETheme.success,
-            Icons.trending_up,
-          ),
+          _buildComparisonItem('Средняя активность', 'Шаги', stepsDelta, PRIMETheme.success, Icons.directions_walk),
           const SizedBox(height: 12),
-          _buildComparisonItem(
-            'Качество сна',
-            'Сон',
-            '+0.3 часа',
-            PRIMETheme.success,
-            Icons.trending_up,
-          ),
+          _buildComparisonItem('Качество сна', 'Сон', sleepDelta, PRIMETheme.success, Icons.bedtime),
         ],
       ),
     );
@@ -3344,29 +3896,22 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
   }
 
   Widget _buildRecentAchievements() {
-    final achievements = [
-      {
-        'title': 'Цель по весу',
-        'description': 'Достигли целевого веса!',
-        'icon': Icons.emoji_events,
-        'color': PRIMETheme.success,
-        'date': '2 дня назад',
-      },
-      {
-        'title': 'Мастер сна',
-        'description': '7 дней подряд качественного сна',
-        'icon': Icons.bedtime,
-        'color': const Color(0xFF9C27B0),
-        'date': '5 дней назад',
-      },
-      {
-        'title': 'Шагомер',
-        'description': '10 000 шагов в день',
-        'icon': Icons.directions_walk,
-        'color': const Color(0xFF4FC3F7),
-        'date': '1 неделя назад',
-      },
-    ];
+    final achievements = _achievements;
+    if (achievements.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Недавние достижения',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text('Пока нет достижений', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: PRIMETheme.sandWeak)),
+        ],
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3440,19 +3985,32 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
   }
 
   Widget _buildActiveChallenges() {
+    // Примерная логика: делаем 2 челленджа на базе текущих целей — вода и шаги.
+    // Прогресс = доля дней за период, где достигнут таргет.
+    double progressDays(List<double> trend, double target) {
+      if (trend.isEmpty || target <= 0) return 0.0;
+      final achieved = trend.where((v)=>v >= target).length;
+      return (achieved / trend.length).clamp(0.0, 1.0);
+    }
+    double waterTarget = 2.0;
+    double stepsTarget = 10000;
+    try { waterTarget = _apiGoals.firstWhere((g)=>g.goalType=='WATER').targetValue; } catch(_){ }
+    try { stepsTarget = _apiGoals.firstWhere((g)=>g.goalType=='STEPS').targetValue; } catch(_){ }
+    final waterProg = progressDays(_trendValuesFor('water'), waterTarget);
+    final stepsProg = progressDays(_trendValuesFor('steps'), stepsTarget);
     final challenges = [
       {
         'title': 'Гидратация Pro',
-        'description': 'Пейте 3л воды 14 дней подряд',
-        'progress': 0.71,
-        'daysLeft': 4,
+        'description': 'Пейте ${waterTarget.toStringAsFixed(1)}л ежедневно',
+        'progress': waterProg,
+        'daysLeft': (_periodDays - (_periodDays * waterProg)).ceil(),
         'color': const Color(0xFF42A5F5),
       },
       {
         'title': 'Железная дисциплина',
-        'description': 'Выполните все цели 30 дней',
-        'progress': 0.43,
-        'daysLeft': 17,
+        'description': 'Шаги ≥ ${stepsTarget.toInt()} в день',
+        'progress': stepsProg,
+        'daysLeft': (_periodDays - (_periodDays * stepsProg)).ceil(),
         'color': PRIMETheme.primary,
       },
     ];
@@ -3550,10 +4108,41 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
   }
 
   Widget _buildStreaks() {
+    int calcStreak(List<double> values, double threshold, {bool greaterOrEqual = true}) {
+      if (values.isEmpty) return 0;
+      int current = 0, best = 0;
+      for (final v in values) {
+        final ok = greaterOrEqual ? v >= threshold : v <= threshold;
+        if (ok) {
+          current++;
+          best = math.max(best, current);
+        } else {
+          current = 0;
+        }
+      }
+      return best;
+    }
+
+    // Steps streak: используем цель из _apiGoals или 10000 по умолчанию
+    double stepsTarget = 10000;
+    try { stepsTarget = _apiGoals.firstWhere((g)=>g.goalType=='STEPS').targetValue; } catch(_){ }
+    final stepsTrend = _trendValuesFor('steps');
+    final stepsStreak = calcStreak(stepsTrend, stepsTarget, greaterOrEqual: true);
+
+    // Water streak (литры) — цель из _apiGoals или 2.0 по умолчанию
+    double waterTarget = 2.0;
+    try { waterTarget = _apiGoals.firstWhere((g)=>g.goalType=='WATER').targetValue; } catch(_){ }
+    final waterTrend = _trendValuesFor('water');
+    final waterStreak = calcStreak(waterTrend, waterTarget, greaterOrEqual: true);
+
+    // Sleep streak — >=7 часов
+    final sleepTrend = _trendValuesFor('sleep');
+    final sleepStreak = calcStreak(sleepTrend, 7.0, greaterOrEqual: true);
+
     final streaks = [
-      {'title': 'Ежедневные шаги', 'count': 12, 'icon': Icons.directions_walk, 'color': const Color(0xFF4FC3F7)},
-      {'title': 'Питьевой режим', 'count': 8, 'icon': Icons.water_drop, 'color': const Color(0xFF42A5F5)},
-      {'title': 'Качественный сон', 'count': 5, 'icon': Icons.bedtime, 'color': const Color(0xFF9C27B0)},
+      {'title': 'Ежедневные шаги', 'count': stepsStreak, 'icon': Icons.directions_walk, 'color': const Color(0xFF4FC3F7)},
+      {'title': 'Питьевой режим', 'count': waterStreak, 'icon': Icons.water_drop, 'color': const Color(0xFF42A5F5)},
+      {'title': 'Качественный сон', 'count': sleepStreak, 'icon': Icons.bedtime, 'color': const Color(0xFF9C27B0)},
     ];
 
     return Column(
@@ -3630,6 +4219,25 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
   }
 
   Widget _buildAchievementStats() {
+    final totalAchievements = _achievements.length;
+    // Активные дни: считаем дни, где есть хотя бы одна активность (шаги > 0 или сон > 0)
+    final steps = _trendValuesFor('steps');
+    final sleep = _trendValuesFor('sleep');
+    final activeDays = () {
+      final len = math.max(steps.length, sleep.length);
+      int count = 0;
+      for (int i = 0; i < len; i++) {
+        final s = i < steps.length ? steps[i] : 0;
+        final sl = i < sleep.length ? sleep[i] : 0;
+        if (s > 0 || sl > 0) count++;
+      }
+      return count;
+    }();
+
+    // Очки/рейтинг — оставим placeholders, либо можно суммировать очки за достижения
+    final xp = totalAchievements * 200; // примитивная метрика
+    final rating = '#${100 + totalAchievements}';
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -3651,11 +4259,11 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
           Row(
             children: [
               Expanded(
-                child: _buildStatItem('Всего достижений', '12', Icons.emoji_events, PRIMETheme.success),
+                child: _buildStatItem('Всего достижений', '$totalAchievements', Icons.emoji_events, PRIMETheme.success),
               ),
               const SizedBox(width: 16),
               Expanded(
-                child: _buildStatItem('Активных дней', '89', Icons.calendar_today, PRIMETheme.primary),
+                child: _buildStatItem('Активных дней', '$activeDays', Icons.calendar_today, PRIMETheme.primary),
               ),
             ],
           ),
@@ -3664,11 +4272,11 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
           Row(
             children: [
               Expanded(
-                child: _buildStatItem('Очки опыта', '2840', Icons.stars, const Color(0xFFFF7043)),
+                child: _buildStatItem('Очки опыта', '$xp', Icons.stars, const Color(0xFFFF7043)),
               ),
               const SizedBox(width: 16),
               Expanded(
-                child: _buildStatItem('Рейтинг', '#127', Icons.leaderboard, const Color(0xFF9C27B0)),
+                child: _buildStatItem('Рейтинг', rating, Icons.leaderboard, const Color(0xFF9C27B0)),
               ),
             ],
           ),
@@ -3717,34 +4325,7 @@ class _AnalyticsSheetState extends State<_AnalyticsSheet>
     );
   }
 
-  // ГЕНЕРАЦИЯ ДАННЫХ
-  List<double> _generateWeightTrendData() {
-    // Генерируем данные веса с постепенным снижением
-    final random = math.Random(42);
-    const baseWeight = 79.7;
-    final data = <double>[];
-    
-    for (int i = 0; i < 30; i++) {
-      final trend = -1.2 * (i / 29); // Снижение на 1.2кг за месяц
-      final noise = (random.nextDouble() - 0.5) * 0.4; // Случайные колебания
-      data.add(baseWeight + trend + noise);
-    }
-    
-    return data;
-  }
-
-  List<double> _generateBMITrendData() {
-    final weightData = _generateWeightTrendData();
-    return weightData.map((weight) => weight / math.pow(180 / 100, 2)).toList();
-  }
-
-  List<int> _generateStepsTrendData() {
-    return [8500, 9200, 7800, 10100, 8900, 6500, 9800]; // Данные за неделю
-  }
-
-  List<double> _generateSleepTrendData() {
-    return [7.2, 7.8, 7.1, 8.0, 7.5, 6.9, 7.8, 8.2, 7.4, 7.6]; // Данные за 10 дней
-  }
+  // Генераторы трендов удалены — теперь данные приходят из API (_stats.trends)
 }
 
 // КАСТОМНЫЕ ПЕЙНТЕРЫ ДЛЯ ГРАФИКОВ

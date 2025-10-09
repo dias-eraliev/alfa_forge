@@ -37,11 +37,9 @@ class _MeasurementHistoryDialogState extends State<MeasurementHistoryDialog>
   void initState() {
     super.initState();
     
-    // Используем мок данные + переданные измерения
-    _allMeasurements = [
-      ...MockMeasurementData.generateMockHistory(),
-      ...widget.initialMeasurements,
-    ];
+    // Используем только реальные данные из API; без моков.
+    // Если список пуст — показываем пустое состояние.
+    _allMeasurements = List.from(widget.initialMeasurements);
     
     _updateHistory();
     

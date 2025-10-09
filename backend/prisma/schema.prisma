@@ -44,6 +44,10 @@ model User {
   notificationSettings NotificationSettings?
   userQuotes           UserQuote[]
   notifications        NotificationHistory[]
+  deviceTokens         DeviceToken[]
+  brotherhoodPosts     BrotherhoodPost[]
+  brotherhoodReplies   BrotherhoodReply[]
+  brotherhoodReactions BrotherhoodReaction[]
 
   @@map("users")
 }
@@ -311,6 +315,81 @@ enum NotificationStatus {
   DELIVERED // Доставлено
   READ // Прочитано
   FAILED // Ошибка доставки
+}
+
+// ========== BROTHERHOOD (микроблог) ==========
+
+enum ReactionType {
+  FIRE
+  THUMBS_UP
+}
+
+model BrotherhoodPost {
+  id        String   @id @default(cuid())
+  userId    String
+  text      String
+  topic     String? // опциональная тема (например, "Здоровье", "Деньги")
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replies   BrotherhoodReply[]
+  reactions BrotherhoodReaction[]
+
+  @@index([userId])
+  @@index([topic])
+  @@map("brotherhood_posts")
+}
+
+model BrotherhoodReply {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  text      String
+  createdAt DateTime @default(now())
+
+  // Relations
+  post BrotherhoodPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([userId])
+  @@map("brotherhood_replies")
+}
+
+model BrotherhoodReaction {
+  id        String       @id @default(cuid())
+  postId    String
+  userId    String
+  type      ReactionType
+  createdAt DateTime     @default(now())
+
+  // Relations
+  post BrotherhoodPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId, type], name: "post_user_type_unique")
+  @@index([postId])
+  @@index([userId])
+  @@map("brotherhood_reactions")
+}
+
+// ========== PUSH DEVICES (OneSignal playerId) ==========
+
+model DeviceToken {
+  id         String   @id @default(cuid())
+  userId     String
+  playerId   String   @unique // OneSignal player/user id
+  platform   String   // 'ios' | 'android' | 'web'
+  lastActive DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("device_tokens")
 }
 
 // =================== PLACEHOLDER MODELS (будут детализированы в следующих шагах) ===================

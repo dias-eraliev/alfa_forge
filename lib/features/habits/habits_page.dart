@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'dart:math' as math;
 import '../shared/bottom_nav_scaffold.dart';
 import '../../app/theme.dart';
-import 'models/habit_model.dart';
+// import 'models/habit_model.dart';
 import 'widgets/advanced_add_habit_dialog.dart';
 import '../../core/services/api_service.dart';
 import '../../core/models/api_models.dart';
@@ -27,78 +26,14 @@ class _HabitsPageState extends State<HabitsPage> with TickerProviderStateMixin {
   // API данные
   final ApiService _apiService = ApiService.instance;
   List<ApiHabit> _apiHabits = [];
-  bool _isLoading = true;
-  String? _errorMessage;
+  // Локальные индикаторы не используются в UI — убраны для чистоты
 
   // Состояние привычек для каждого дня месяца (теперь из API)
   Map<String, List<bool?>> habitsData = {};
 
-  // Резервные моковые данные на случай отсутствия API
-  final List<Map<String, dynamic>> _fallbackHabits = [
-    {
-      'id': 'cold_shower',
-      'name': 'Холодный душ',
-      'icon': Icons.ac_unit,
-      'frequency': 'ежедневно',
-      'description': 'Укрепляет силу воли и иммунитет',
-      'streak': 12,
-      'maxStreak': 45,
-      'strength': 78,
-      'color': const Color(0xFF4FC3F7),
-    },
-    {
-      'id': 'gym',
-      'name': 'Тренировка',
-      'icon': Icons.fitness_center,
-      'frequency': '4 раза в неделю',
-      'description': 'Строительство мужского тела',
-      'streak': 8,
-      'maxStreak': 28,
-      'strength': 65,
-      'color': const Color(0xFFFF7043),
-    },
-    {
-      'id': 'meditation',
-      'name': 'Медитация',
-      'icon': Icons.self_improvement,
-      'frequency': 'ежедневно 10 мин',
-      'description': 'Контроль ума и эмоций',
-      'streak': 5,
-      'maxStreak': 21,
-      'strength': 42,
-      'color': const Color(0xFF9C27B0),
-    },
-    {
-      'id': 'reading',
-      'name': 'Чтение',
-      'icon': Icons.book,
-      'frequency': '30 мин/день',
-      'description': 'Развитие интеллекта',
-      'streak': 15,
-      'maxStreak': 67,
-      'strength': 89,
-      'color': const Color(0xFF66BB6A),
-    },
-    {
-      'id': 'no_fap',
-      'name': 'NoFap',
-      'icon': Icons.block,
-      'frequency': 'постоянно',
-      'description': 'Сохранение мужской энергии',
-      'streak': 23,
-      'maxStreak': 89,
-      'strength': 91,
-      'color': const Color(0xFFFFB74D),
-    },
-  ];
-
-  // Геттер для получения текущих привычек (API или моковые)
-  List<Map<String, dynamic>> get habits {
-    if (_apiHabits.isNotEmpty) {
-      return _apiHabits.map((apiHabit) => _convertApiHabitToMap(apiHabit)).toList();
-    }
-    return _fallbackHabits;
-  }
+  // Отображаем только данные из API; моков нет
+  List<Map<String, dynamic>> get _uiHabitsFromApi =>
+      _apiHabits.map((h) => _convertApiHabitToMap(h)).toList();
 
   @override
   void initState() {
@@ -127,11 +62,6 @@ class _HabitsPageState extends State<HabitsPage> with TickerProviderStateMixin {
   // Инициализация API и загрузка данных
   Future<void> _initializeApi() async {
     try {
-      setState(() {
-        _isLoading = true;
-        _errorMessage = null;
-      });
-
       // Инициализируем API сервис
       await _apiService.initialize();
 
@@ -141,15 +71,10 @@ class _HabitsPageState extends State<HabitsPage> with TickerProviderStateMixin {
       // Инициализируем данные привычек
       _initializeHabitsData();
     } catch (e) {
-      setState(() {
-        _errorMessage = 'Ошибка загрузки: $e';
-        // Используем моковые данные при ошибке
-        _initializeHabitsData();
-      });
+      // Используем моковые данные при ошибке
+      _initializeHabitsData();
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      // no-op
     }
   }
 
@@ -161,7 +86,6 @@ class _HabitsPageState extends State<HabitsPage> with TickerProviderStateMixin {
       if (response.isSuccess && response.data != null) {
         setState(() {
           _apiHabits = response.data!;
-          _errorMessage = null;
         });
       } else {
         throw Exception(response.error ?? 'Неизвестная ошибка API');
@@ -171,7 +95,6 @@ class _HabitsPageState extends State<HabitsPage> with TickerProviderStateMixin {
       print('Ошибка загрузки привычек из API: $e');
       setState(() {
         _apiHabits = [];
-        _errorMessage = 'Используются локальные данные';
       });
     }
   }
@@ -182,27 +105,54 @@ class _HabitsPageState extends State<HabitsPage> with TickerProviderStateMixin {
   }
 
   void _initializeHabitsData() {
-    for (var habit in habits) {
-      habitsData[habit['id']] = _generateHabitData(habit['id']);
+    habitsData.clear();
+
+    // Если загрузились API-привычки — строим матрицу дней из фактических выполнений
+    if (_apiHabits.isNotEmpty) {
+      for (final apiHabit in _apiHabits) {
+        habitsData[apiHabit.id] = _buildMonthDataFromApi(apiHabit);
+      }
+      return;
     }
+
+    // Если API недоступен — оставляем пустую матрицу
   }
 
-  List<bool?> _generateHabitData(String habitId) {
-    final data = <bool?>[];
-    final random = math.Random(habitId.hashCode);
-    
+  // Удалён генератор случайных данных — работаем только с API
+
+  // Формируем матрицу (31 элемент) по данным API: true/false по дням, null для будущих/несуществующих дней
+  List<bool?> _buildMonthDataFromApi(ApiHabit habit) {
+    final result = List<bool?>.filled(31, null);
+    final now = DateTime.now();
+    final daysInThisMonth = _daysInMonth(currentYear, currentMonth);
+
     for (int i = 1; i <= 31; i++) {
-      if (i > 25) {
-        data.add(null); // Будущие дни
-      } else {
-        // Генерируем данные на основе силы привычки
-        final habit = habits.firstWhere((h) => h['id'] == habitId);
-        final strength = habit['strength'] as int;
-        final chance = strength / 100.0;
-        data.add(random.nextDouble() < chance);
+      if (i > daysInThisMonth) {
+        result[i - 1] = null;
+        continue;
       }
+      final dayDate = DateTime(currentYear, currentMonth, i);
+      if (dayDate.isAfter(DateTime(now.year, now.month, now.day))) {
+        result[i - 1] = null;
+        continue;
+      }
+      final has = _hasCompletionOnDate(habit, dayDate);
+      result[i - 1] = has;
     }
-    return data;
+    return result;
+  }
+
+  bool _hasCompletionOnDate(ApiHabit habit, DateTime date) {
+    return habit.completions.any((c) =>
+      c.date.year == date.year &&
+      c.date.month == date.month &&
+      c.date.day == date.day,
+    );
+  }
+
+  int _daysInMonth(int year, int month) {
+    final lastDay = DateTime(year, month + 1, 0);
+    return lastDay.day;
   }
 
   @override
@@ -230,17 +180,48 @@ class _HabitsPageState extends State<HabitsPage> with TickerProviderStateMixin {
                 onAddHabit: _showAddHabitDialog,
                 onFilter: _showFilterDialog,
               ),
-              
+
               // Сетка привычек
               Expanded(
                 child: SingleChildScrollView(
                   child: ScaleTransition(
                     scale: _scaleAnimation,
-                    child: _HabitsGrid(
-                      habits: habits,
-                      habitsData: habitsData,
-                      onToggleHabit: _toggleHabit,
-                      onShowAnalytics: _showDetailedAnalytics,
+                    child: Builder(
+                      builder: (context) {
+                        final items = _uiHabitsFromApi;
+                        if (items.isEmpty) {
+                          return Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: const [
+                                SizedBox(height: 24),
+                                Icon(Icons.hourglass_empty, color: PRIMETheme.sandWeak, size: 48),
+                                SizedBox(height: 12),
+                                Text(
+                                  'Пока нет привычек',
+                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                                  textAlign: TextAlign.center,
+                                ),
+                                SizedBox(height: 8),
+                                Text(
+                                  'Добавьте новую привычку, чтобы начать отслеживание',
+                                  style: TextStyle(color: PRIMETheme.sandWeak),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+
+                        return _HabitsGrid(
+                          habits: items,
+                          habitsData: habitsData,
+                          apiHabits: _apiHabits,
+                          onToggleHabit: _toggleHabit,
+                          onShowAnalytics: _showDetailedAnalytics,
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -269,31 +250,78 @@ class _HabitsPageState extends State<HabitsPage> with TickerProviderStateMixin {
     _scaleController.forward();
   }
 
-  void _toggleHabit(String habitId, int day) {
-    setState(() {
-      if (habitsData[habitId] != null && day < habitsData[habitId]!.length) {
-        final currentValue = habitsData[habitId]![day];
-        if (currentValue != null) {
-          habitsData[habitId]![day] = !currentValue;
-          
-          // Показываем feedback
+  void _toggleHabit(String habitId, int dayIndex) async {
+    // Валидация индексов и текущего состояния дня
+    final list = habitsData[habitId];
+    if (list == null || dayIndex < 0 || dayIndex >= list.length) return;
+    final currentValue = list[dayIndex];
+    if (currentValue == null) return; // будущее/несуществующий день — ничего не делаем
+
+    final dayDate = DateTime(currentYear, currentMonth, dayIndex + 1);
+
+    try {
+      if (currentValue) {
+        // Было выполнено — снимаем выполнение
+        final resp = await _apiService.habits.uncompleteHabit(habitId, dayDate);
+        if (resp.isSuccess) {
+          setState(() {
+            habitsData[habitId]![dayIndex] = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Привычка снята', style: TextStyle(color: PRIMETheme.sand)),
+              backgroundColor: PRIMETheme.line,
+              duration: const Duration(seconds: 1),
+            ),
+          );
+        } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                habitsData[habitId]![day]! 
-                  ? 'Привычка отмечена! 💪'
-                  : 'Привычка снята',
+                resp.error ?? 'Не удалось снять выполнение',
                 style: const TextStyle(color: PRIMETheme.sand),
               ),
-              backgroundColor: habitsData[habitId]![day]! 
-                ? PRIMETheme.primary 
-                : PRIMETheme.line,
+              backgroundColor: PRIMETheme.warn,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        // Не было выполнено — отмечаем выполнение
+        final resp = await _apiService.habits.completeHabit(habitId, date: dayDate);
+        if (resp.isSuccess) {
+          setState(() {
+            habitsData[habitId]![dayIndex] = true;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Привычка отмечена! 💪', style: TextStyle(color: PRIMETheme.sand)),
+              backgroundColor: PRIMETheme.primary,
               duration: const Duration(seconds: 1),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                resp.error ?? 'Не удалось отметить привычку',
+                style: const TextStyle(color: PRIMETheme.sand),
+              ),
+              backgroundColor: PRIMETheme.warn,
+              duration: const Duration(seconds: 2),
             ),
           );
         }
       }
-    });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Что-то пошло не так', style: TextStyle(color: PRIMETheme.sand)),
+          backgroundColor: PRIMETheme.warn,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   void _showAddHabitDialog() {
@@ -301,54 +329,73 @@ class _HabitsPageState extends State<HabitsPage> with TickerProviderStateMixin {
       context: context,
       builder: (context) => AdvancedAddHabitDialog(
         onHabitAdded: (habit) {
-          setState(() {
-            habits.add({
-              'id': habit.id,
-              'name': habit.name,
-              'icon': habit.icon,
-              'frequency': habit.frequency.displayText,
-              'description': habit.description ?? 'Новая привычка',
-              'streak': 0,
-              'maxStreak': 0,
-              'strength': 0,
-              'color': habit.color,
-            });
-            
-            // Инициализируем данные для новой привычки
-            habitsData[habit.id] = _generateHabitData(habit.id);
-          });
+          () async {
+            try {
+              // Получаем список категорий с сервера и ищем подходящую
+              final catsResp = await _apiService.habits.getHabitCategories();
+              String? categoryId;
+              if (catsResp.isSuccess && catsResp.data != null && catsResp.data!.isNotEmpty) {
+                final categories = catsResp.data!;
+                // Пытаемся сопоставить по имени enum/строки
+                final localName = habit.category.name.toLowerCase();
+                final match = categories.firstWhere(
+                  (c) => c.name.toLowerCase() == localName || c.displayName.toLowerCase() == localName,
+                  orElse: () => categories.first,
+                );
+                categoryId = match.id;
+              }
 
-          // Показываем уведомление об успешном добавлении
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  Icon(
-                    habit.icon,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Привычка "${habit.name}" добавлена! 🎉',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
+              final dto = HabitConverter.habitModelToCreateDto(
+                habit,
+                categoryIdOverride: categoryId ?? habit.category.name,
+              );
+              final resp = await _apiService.habits.createHabit(dto);
+              if (resp.isSuccess) {
+                await _loadHabitsFromApi();
+                _initializeHabitsData();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Row(
+                      children: [
+                        Icon(habit.icon, color: PRIMETheme.sand, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Привычка "${habit.name}" создана',
+                            style: const TextStyle(color: PRIMETheme.sand, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
                     ),
+                    backgroundColor: habit.color,
+                    duration: const Duration(seconds: 3),
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    margin: const EdgeInsets.all(16),
                   ),
-                ],
-              ),
-              backgroundColor: habit.color,
-              duration: const Duration(seconds: 3),
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              margin: const EdgeInsets.all(16),
-            ),
-          );
+                );
+              } else {
+                throw Exception(resp.error ?? 'Не удалось создать привычку');
+              }
+            } catch (e) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Row(
+                    children: const [
+                      Icon(Icons.error_outline, color: PRIMETheme.sand, size: 20),
+                      SizedBox(width: 8),
+                      Expanded(child: Text('Ошибка создания привычки', style: TextStyle(color: PRIMETheme.sand))),
+                    ],
+                  ),
+                  backgroundColor: PRIMETheme.warn,
+                  duration: const Duration(seconds: 3),
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  margin: const EdgeInsets.all(16),
+                ),
+              );
+            }
+          }();
         },
       ),
     );
@@ -488,18 +535,18 @@ class _HabitsPageState extends State<HabitsPage> with TickerProviderStateMixin {
                           child: Container(
                             padding: EdgeInsets.symmetric(
                               horizontal: isSmallScreen ? 16 : 20,
-                              vertical: isSmallScreen ? 12 : 14,
+                              vertical: isSmallScreen ? 10 : 12,
                             ),
                             decoration: BoxDecoration(
-                              color: PRIMETheme.line.withOpacity(0.3),
+                              color: Theme.of(context).cardColor,
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(color: PRIMETheme.line),
                             ),
                             child: Text(
-                              'Отмена',
+                              'Сбросить',
                               style: TextStyle(
                                 color: PRIMETheme.sand,
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.bold,
                                 fontSize: isSmallScreen ? 16 : 18,
                               ),
                               textAlign: TextAlign.center,
@@ -509,28 +556,22 @@ class _HabitsPageState extends State<HabitsPage> with TickerProviderStateMixin {
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        flex: 2,
                         child: InkWell(
                           onTap: () => Navigator.pop(context),
                           borderRadius: BorderRadius.circular(12),
                           child: Container(
                             padding: EdgeInsets.symmetric(
                               horizontal: isSmallScreen ? 16 : 20,
-                              vertical: isSmallScreen ? 12 : 14,
+                              vertical: isSmallScreen ? 10 : 12,
                             ),
                             decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  PRIMETheme.primary,
-                                  PRIMETheme.primary.withOpacity(0.8),
-                                ],
-                              ),
+                              color: PRIMETheme.primary,
                               borderRadius: BorderRadius.circular(12),
-                              boxShadow: [
+                              boxShadow: const [
                                 BoxShadow(
-                                  color: PRIMETheme.primary.withOpacity(0.3),
+                                  color: Color(0x332196F3),
                                   blurRadius: 8,
-                                  offset: const Offset(0, 2),
+                                  offset: Offset(0, 2),
                                 ),
                               ],
                             ),
@@ -745,12 +786,14 @@ class _Header extends StatelessWidget {
 class _HabitsGrid extends StatelessWidget {
   final List<Map<String, dynamic>> habits;
   final Map<String, List<bool?>> habitsData;
+  final List<ApiHabit> apiHabits;
   final Function(String, int) onToggleHabit;
   final Function(Map<String, dynamic>) onShowAnalytics;
 
   const _HabitsGrid({
     required this.habits,
     required this.habitsData,
+    required this.apiHabits,
     required this.onToggleHabit,
     required this.onShowAnalytics,
   });
@@ -784,7 +827,7 @@ class _HabitsGrid extends StatelessWidget {
           const SizedBox(height: 24),
           
           // Общая аналитика
-          _OverallAnalytics(habits: habits, habitsData: habitsData),
+          _OverallAnalytics(habits: habits, habitsData: habitsData, apiHabits: apiHabits),
         ],
       ),
     );
@@ -900,7 +943,7 @@ class _HabitRowState extends State<_HabitRow> with SingleTickerProviderStateMixi
     // Адаптивные размеры для лучшего мобильного опыта
     final daySize = isVerySmallScreen ? 16.0 : (isSmallScreen ? 20.0 : 24.0);
     final iconSize = isSmallScreen ? 36.0 : 44.0;
-    final habitWidth = isVerySmallScreen ? 100.0 : (isSmallScreen ? 120.0 : 140.0);
+  // final habitWidth = isVerySmallScreen ? 100.0 : (isSmallScreen ? 120.0 : 140.0);
     final cardPadding = isVerySmallScreen ? 8.0 : (isSmallScreen ? 12.0 : 16.0);
 
     return InkWell(
@@ -1155,10 +1198,12 @@ class _HabitRowState extends State<_HabitRow> with SingleTickerProviderStateMixi
 class _OverallAnalytics extends StatelessWidget {
   final List<Map<String, dynamic>> habits;
   final Map<String, List<bool?>> habitsData;
+  final List<ApiHabit> apiHabits;
 
   const _OverallAnalytics({
     required this.habits,
     required this.habitsData,
+    required this.apiHabits,
   });
 
   @override
@@ -1321,6 +1366,7 @@ class _OverallAnalytics extends StatelessWidget {
       builder: (context) => _GlobalAnalyticsSheet(
         habits: habits,
         habitsData: habitsData,
+        apiHabits: apiHabits,
       ),
     );
   }
@@ -1392,6 +1438,10 @@ class _DetailedAnalyticsSheetState extends State<_DetailedAnalyticsSheet>
   late AnimationController _chartController;
   late Animation<Offset> _slideAnimation;
   late Animation<double> _chartAnimation;
+  Map<String, dynamic>? _stats;
+  bool _loading = true;
+  String? _error;
+  List<bool?> _apiChartData = const [];
 
   @override
   void initState() {
@@ -1421,6 +1471,78 @@ class _DetailedAnalyticsSheetState extends State<_DetailedAnalyticsSheet>
     Future.delayed(const Duration(milliseconds: 300), () {
       _chartController.forward();
     });
+
+    _loadStats();
+  }
+
+  Future<void> _loadStats() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final api = ApiService.instance;
+      // Период: последние 7 дней, включая сегодня
+      final now = DateTime.now();
+      final end = DateTime(now.year, now.month, now.day);
+      final start = end.subtract(const Duration(days: 6));
+      final resp = await api.habits.getHabitStats(
+        widget.habit['id'] as String,
+        startDate: start,
+        endDate: end,
+      );
+      if (resp.isSuccess) {
+        final stats = resp.data as Map<String, dynamic>;
+        // Построим массив для графика по датам периода
+        final period = stats['period'] as Map<String, dynamic>?;
+        final comps = (stats['completions'] as List<dynamic>?) ?? const [];
+        List<bool?> chart = const [];
+        if (period != null) {
+          final start = DateTime.parse(period['startDate'] as String);
+          final end = DateTime.parse(period['endDate'] as String);
+          chart = _buildChartDataFromCompletions(start, end, comps);
+        }
+
+        setState(() {
+          _stats = stats;
+          _apiChartData = chart;
+          _loading = false;
+        });
+      } else {
+        setState(() {
+          _error = resp.error ?? 'Ошибка сервера';
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  List<bool?> _buildChartDataFromCompletions(
+    DateTime start,
+    DateTime end,
+    List<dynamic> completions,
+  ) {
+    bool sameDay(DateTime a, DateTime b) =>
+        a.year == b.year && a.month == b.month && a.day == b.day;
+
+    final completedDates = completions
+        .map((c) => DateTime.parse((c as Map<String, dynamic>)['date'] as String))
+        .toList();
+
+    final days = <bool?>[];
+    for (DateTime d = start;
+        !d.isAfter(end);
+        d = DateTime(d.year, d.month, d.day + 1)) {
+      final hasCompletion = completedDates.any((cd) => sameDay(cd, d));
+      days.add(hasCompletion ? true : false);
+    }
+    return days;
   }
 
   @override
@@ -1434,7 +1556,8 @@ class _DetailedAnalyticsSheetState extends State<_DetailedAnalyticsSheet>
   Widget build(BuildContext context) {
     final completedDays = widget.data.where((d) => d == true).length;
     final totalDays = widget.data.where((d) => d != null).length;
-    final completionRate = totalDays > 0 ? (completedDays / totalDays * 100).round() : 0;
+    final localCompletionRate = totalDays > 0 ? (completedDays / totalDays * 100).round() : 0;
+    final completionRate = (_stats != null ? ((_stats!['stats']?['completionRate'] ?? localCompletionRate) as num).round() : localCompletionRate);
 
     return SlideTransition(
       position: _slideAnimation,
@@ -1516,6 +1639,23 @@ class _DetailedAnalyticsSheetState extends State<_DetailedAnalyticsSheet>
                 padding: const EdgeInsets.all(24),
                 child: Column(
                   children: [
+                    if (_loading) ...[
+                      const Center(child: CircularProgressIndicator()),
+                      const SizedBox(height: 16),
+                    ] else if (_error != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: PRIMETheme.warn.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          'Не удалось загрузить статистику: $_error',
+                          style: const TextStyle(color: PRIMETheme.warn),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     // Основные метрики
                     Row(
                       children: [
@@ -1589,7 +1729,7 @@ class _DetailedAnalyticsSheetState extends State<_DetailedAnalyticsSheet>
                               ),
                               const SizedBox(height: 16),
                               _ProgressChart(
-                                data: widget.data,
+                                data: _apiChartData.isNotEmpty ? _apiChartData : widget.data,
                                 color: widget.habit['color'],
                                 animation: _chartAnimation,
                               ),
@@ -1654,7 +1794,7 @@ class _DetailedAnalyticsSheetState extends State<_DetailedAnalyticsSheet>
   }
 
   String _getInsight(Map<String, dynamic> habit, int completionRate) {
-    final strength = habit['strength'] as int;
+  // final strength = habit['strength'] as int;
     
     if (completionRate >= 80) {
       return 'Отличная работа! Ваша привычка укрепляется. Продолжайте в том же духе! 💪';
@@ -1880,10 +2020,12 @@ class _ProgressChartPainter extends CustomPainter {
 class _GlobalAnalyticsSheet extends StatelessWidget {
   final List<Map<String, dynamic>> habits;
   final Map<String, List<bool?>> habitsData;
+  final List<ApiHabit> apiHabits;
 
   const _GlobalAnalyticsSheet({
     required this.habits,
     required this.habitsData,
+    required this.apiHabits,
   });
 
   @override
@@ -1976,12 +2118,12 @@ class _GlobalAnalyticsSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   
-                  _WeeklyChart(habits: habits, habitsData: habitsData),
+                  _WeeklyChart(habits: habits, habitsData: habitsData, apiHabits: apiHabits),
                   
                   const SizedBox(height: 32),
                   
-                  // Достижения
-                  _AchievementsSection(),
+                  // Достижения (динамически из API)
+                  _AchievementsSection(apiHabits: apiHabits),
                 ],
               ),
             ),
@@ -2104,10 +2246,12 @@ class _RankingCard extends StatelessWidget {
 class _WeeklyChart extends StatelessWidget {
   final List<Map<String, dynamic>> habits;
   final Map<String, List<bool?>> habitsData;
+  final List<ApiHabit> apiHabits;
 
   const _WeeklyChart({
     required this.habits,
     required this.habitsData,
+    required this.apiHabits,
   });
 
   @override
@@ -2136,7 +2280,7 @@ class _WeeklyChart extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: List.generate(7, (index) {
                 final days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-                final activity = _getWeekdayActivity(index);
+                final activity = _computeWeekdayActivity(index);
                 final height = (activity / 100) * 60 + 10;
                 
                 return Column(
@@ -2172,10 +2316,37 @@ class _WeeklyChart extends StatelessWidget {
     );
   }
 
-  double _getWeekdayActivity(int weekday) {
-    // Эмуляция активности по дням недели
-    final activities = [85, 90, 75, 80, 70, 45, 55]; // Пн-Вс
-    return activities[weekday].toDouble();
+  double _computeWeekdayActivity(int weekdayIndex) {
+    // weekdayIndex: 0..6 соответствует Пн..Вс
+    if (apiHabits.isEmpty) return 0.0;
+
+    // Собираем выполнения за последние 7 дней, включая сегодня
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 6));
+    final end = DateTime(now.year, now.month, now.day);
+
+    // Карта: 0..6 -> количество выполнений
+    final counts = List<int>.filled(7, 0);
+
+    bool sameDay(DateTime a, DateTime b) =>
+        a.year == b.year && a.month == b.month && a.day == b.day;
+
+    // Нормализуем к 1=Пн..7=Вс (Dart: DateTime.weekday)
+    int toIndex(DateTime d) => (d.weekday + 6) % 7; // Mon->0 ... Sun->6
+
+    for (final habit in apiHabits) {
+      for (final c in habit.completions) {
+        final cd = DateTime(c.date.year, c.date.month, c.date.day);
+        if ((cd.isAfter(start) || sameDay(cd, start)) && (cd.isBefore(end) || sameDay(cd, end))) {
+          counts[toIndex(cd)] += 1;
+        }
+      }
+    }
+
+    // Нормируем в проценты относительно максимума дня (чтобы столбики не были нулём)
+    final maxVal = counts.fold<int>(0, (m, v) => v > m ? v : m);
+    if (maxVal == 0) return 0.0;
+    return (counts[weekdayIndex] / maxVal) * 100.0;
   }
 }
 
@@ -2283,29 +2454,67 @@ class _FilterOption extends StatelessWidget {
 }
 
 class _AchievementsSection extends StatelessWidget {
+  final List<ApiHabit> apiHabits;
+
+  const _AchievementsSection({required this.apiHabits});
+
   @override
   Widget build(BuildContext context) {
+    // Собираем все completion-даты пользователя
+    final allDates = apiHabits
+        .expand((h) => h.completions.map((c) => DateTime(c.date.year, c.date.month, c.date.day)))
+        .toSet()
+        .toList()
+      ..sort();
+
+    // 1) Первый шаг: есть хотя бы одно выполнение
+    final firstStepAchieved = allDates.isNotEmpty;
+
+    // 2) Серия 7 дней: есть ли где-то подряд 7 дней выполнения
+    int longestStreak = 0;
+    int current = 0;
+    for (int i = 0; i < allDates.length; i++) {
+      if (i == 0) {
+        current = 1;
+      } else {
+        final diff = allDates[i].difference(allDates[i - 1]).inDays;
+        if (diff == 1) {
+          current += 1;
+        } else if (diff == 0) {
+          // та же дата — пропускаем, уже учитыта как set
+        } else {
+          current = 1;
+        }
+      }
+      if (current > longestStreak) longestStreak = current;
+    }
+    final streak7Achieved = longestStreak >= 7;
+
+    // 3) 10 выполнений всего
+    final totalCompletions = apiHabits.fold<int>(0, (sum, h) => sum + h.completions.length);
+    final tenCompletionsAchieved = totalCompletions >= 10;
+
     final achievements = [
       {
-        'title': 'Железная воля',
-        'description': 'Выполнили все привычки 7 дней подряд',
+        'title': 'Первый шаг',
+        'description': 'Сделали первое выполнение привычки',
+        'icon': Icons.rocket_launch,
+        'color': const Color(0xFF66BB6A),
+        'achieved': firstStepAchieved,
+      },
+      {
+        'title': 'Серия 7 дней',
+        'description': 'Выполняли привычки 7 дней подряд',
+        'icon': Icons.local_fire_department,
+        'color': const Color(0xFFFF7043),
+        'achieved': streak7Achieved,
+      },
+      {
+        'title': 'Десятка',
+        'description': '10 выполнений привычек',
         'icon': Icons.military_tech,
         'color': const Color(0xFFFFD700),
-        'achieved': true,
-      },
-      {
-        'title': 'Спартанец',
-        'description': 'Холодный душ 30 дней подряд',
-        'icon': Icons.ac_unit,
-        'color': const Color(0xFF4FC3F7),
-        'achieved': false,
-      },
-      {
-        'title': 'Книжный червь',
-        'description': 'Читали каждый день месяц',
-        'icon': Icons.book,
-        'color': const Color(0xFF66BB6A),
-        'achieved': true,
+        'achieved': tenCompletionsAchieved,
       },
     ];
 
@@ -2319,7 +2528,6 @@ class _AchievementsSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        
         ...achievements.map((achievement) => Container(
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(16),

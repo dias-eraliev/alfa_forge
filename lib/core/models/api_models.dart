@@ -276,11 +276,14 @@ class ApiHabit {
   final String id;
   final String name;
   final String? description;
+  // Имя категории (из связанной категории или строки)
   final String category;
+  // Тип частоты (DAILY/WEEKLY/MONTHLY/CUSTOM)
   final String frequency;
   final int targetCount;
   final String? iconName;
-  final String? color;
+  // Цвет из бэкенда (#RRGGBB)
+  final String? colorHex;
   final bool isActive;
   final DateTime createdAt;
   final List<ApiHabitCompletion> completions;
@@ -293,44 +296,44 @@ class ApiHabit {
     required this.frequency,
     required this.targetCount,
     this.iconName,
-    this.color,
+    this.colorHex,
     required this.isActive,
     required this.createdAt,
     this.completions = const [],
   });
 
   factory ApiHabit.fromJson(Map<String, dynamic> json) {
+    // Достаем категорию: либо строка, либо объект { name, displayName }
+    String categoryName = 'other';
+    final dynamic cat = json['category'];
+    if (cat is String) {
+      categoryName = cat;
+    } else if (cat is Map<String, dynamic>) {
+      categoryName = (cat['name'] as String?) ?? (cat['displayName'] as String?) ?? 'other';
+    } else if (json['categoryId'] is String) {
+      // если пришёл только id, оставим как id
+      categoryName = json['categoryId'] as String;
+    }
+
+    // Частота: используем frequencyType если есть
+    String frequencyValue = (json['frequency'] as String?) ?? (json['frequencyType'] as String?) ?? 'DAILY';
+
     return ApiHabit(
       id: json['id'] as String,
       name: json['name'] as String,
       description: json['description'] as String?,
-      category: json['category'] as String,
-      frequency: json['frequency'] as String,
-      targetCount: json['targetCount'] as int,
+      category: categoryName,
+      frequency: frequencyValue,
+      targetCount: (json['targetCount'] as int?) ?? 1,
       iconName: json['iconName'] as String?,
-      color: json['color'] as String?,
-      isActive: json['isActive'] as bool,
-      createdAt: DateTime.parse(json['createdAt'] as String),
+      colorHex: (json['colorHex'] as String?) ?? (json['color'] as String?),
+      isActive: (json['isActive'] as bool?) ?? true,
+      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
       completions: (json['completions'] as List<dynamic>?)
               ?.map((e) => ApiHabitCompletion.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
     );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'description': description,
-      'category': category,
-      'frequency': frequency,
-      'targetCount': targetCount,
-      'iconName': iconName,
-      'color': color,
-      'isActive': isActive,
-      'createdAt': createdAt.toIso8601String(),
-    };
   }
 }
 
@@ -353,9 +356,9 @@ class ApiHabitCompletion {
   factory ApiHabitCompletion.fromJson(Map<String, dynamic> json) {
     return ApiHabitCompletion(
       id: json['id'] as String,
-      habitId: json['habitId'] as String,
+      habitId: (json['habitId'] as String?) ?? '',
       date: DateTime.parse(json['date'] as String),
-      count: json['count'] as int,
+      count: (json['count'] as int?) ?? 1,
       notes: json['notes'] as String?,
     );
   }
@@ -386,17 +389,18 @@ class ApiTask {
   });
 
   factory ApiTask.fromJson(Map<String, dynamic> json) {
+    final priorityRaw = (json['priority'] ?? json['Priority'] ?? '') as String;
+    final statusRaw = (json['status'] ?? json['Status'] ?? '') as String;
+    final dueRaw = json['deadline'] ?? json['dueDate'];
     return ApiTask(
       id: json['id'] as String,
       title: json['title'] as String,
       description: json['description'] as String?,
-      priority: json['priority'] as String,
-      status: json['status'] as String,
-      dueDate: json['dueDate'] != null 
-          ? DateTime.parse(json['dueDate'] as String)
-          : null,
+      priority: priorityRaw,
+      status: statusRaw,
+      dueDate: dueRaw != null ? DateTime.parse(dueRaw as String) : null,
       category: json['category'] as String?,
-      isCompleted: json['isCompleted'] as bool,
+      isCompleted: (json['isCompleted'] as bool?) ?? (statusRaw.toString().toLowerCase() == 'completed' || statusRaw.toString().toLowerCase() == 'done'),
       createdAt: DateTime.parse(json['createdAt'] as String),
     );
   }
@@ -408,7 +412,7 @@ class ApiTask {
       'description': description,
       'priority': priority,
       'status': status,
-      'dueDate': dueDate?.toIso8601String(),
+  'dueDate': dueDate?.toIso8601String(),
       'category': category,
       'isCompleted': isCompleted,
       'createdAt': createdAt.toIso8601String(),
@@ -446,13 +450,17 @@ class ApiHealthMeasurement {
   }
 
   Map<String, dynamic> toJson() {
-    return {
+    // Backend DTO (CreateMeasurementDto) whitelists fields strictly.
+    // Do NOT include unsupported fields like 'unit' to avoid 400 errors.
+    final map = <String, dynamic>{
       'typeId': typeId,
       'value': value,
-      'unit': unit,
       'timestamp': timestamp.toIso8601String(),
-      'notes': notes,
     };
+    if (notes != null && notes!.isNotEmpty) {
+      map['notes'] = notes;
+    }
+    return map;
   }
 }
 
@@ -483,6 +491,81 @@ class ApiMeasurementType {
       iconName: json['iconName'] as String?,
       description: json['description'] as String?,
     );
+  }
+}
+
+// Цель здоровья (для Health API)
+class ApiHealthGoal {
+  final String id;
+  final String title;
+  final String goalType; // e.g., WEIGHT, BODY_FAT
+  final double targetValue;
+  final double currentValue;
+  final String priority; // LOW|MEDIUM|HIGH
+  final String frequency; // DAILY|WEEKLY|MONTHLY|YEARLY
+  final DateTime? startDate;
+  final DateTime? targetDate;
+  final String? typeId; // optional measurement type link
+  final String? notes;
+  final bool isActive;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  ApiHealthGoal({
+    required this.id,
+    required this.title,
+    required this.goalType,
+    required this.targetValue,
+    required this.currentValue,
+    required this.priority,
+    required this.frequency,
+    this.startDate,
+    this.targetDate,
+    this.typeId,
+    this.notes,
+    required this.isActive,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  factory ApiHealthGoal.fromJson(Map<String, dynamic> json) {
+    return ApiHealthGoal(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      goalType: json['goalType'] as String,
+      targetValue: (json['targetValue'] as num).toDouble(),
+      currentValue: (json['currentValue'] as num?)?.toDouble() ?? 0.0,
+      priority: json['priority'] as String,
+      frequency: json['frequency'] as String,
+      startDate: (json['startDate'] != null && (json['startDate'] as String).isNotEmpty)
+          ? DateTime.parse(json['startDate'] as String)
+          : null,
+      targetDate: (json['targetDate'] != null && (json['targetDate'] as String).isNotEmpty)
+          ? DateTime.parse(json['targetDate'] as String)
+          : null,
+      typeId: json['typeId'] as String?,
+      notes: json['notes'] as String?,
+      isActive: (json['isActive'] as bool?) ?? true,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    final map = <String, dynamic>{
+      'title': title,
+      'goalType': goalType,
+      'targetValue': targetValue,
+      'currentValue': currentValue,
+      'priority': priority,
+      'frequency': frequency,
+    };
+    if (startDate != null) map['startDate'] = startDate!.toIso8601String();
+    if (targetDate != null) map['targetDate'] = targetDate!.toIso8601String();
+    if (typeId != null) map['typeId'] = typeId;
+    if (notes != null && notes!.isNotEmpty) map['notes'] = notes;
+    map['isActive'] = isActive;
+    return map;
   }
 }
 
@@ -626,34 +709,104 @@ class ApiDashboard {
 }
 
 // DTO для создания/обновления
+// Категория привычки (ответ бэкенда /habits/categories/list)
+class ApiHabitCategory {
+  final String id;
+  final String name;
+  final String displayName;
+  final String iconName;
+  final String colorHex;
+
+  ApiHabitCategory({
+    required this.id,
+    required this.name,
+    required this.displayName,
+    required this.iconName,
+    required this.colorHex,
+  });
+
+  factory ApiHabitCategory.fromJson(Map<String, dynamic> json) {
+    return ApiHabitCategory(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      displayName: json['displayName'] as String,
+      iconName: json['iconName'] as String,
+      colorHex: json['colorHex'] as String,
+    );
+  }
+}
+
+// DTO создания/обновления привычки (совместим с backend CreateHabitDto)
 class CreateHabitDto {
   final String name;
   final String? description;
-  final String category;
-  final String frequency;
-  final int targetCount;
-  final String? iconName;
-  final String? color;
+  final String? motivation;
+  final String iconName;
+  final String? iconFamily;
+  final String colorHex;
+  final String categoryId;
+  final String? templateId;
+  // Enums в виде строк в формате бэкенда: DAILY|WEEKLY|MONTHLY|CUSTOM
+  final String frequencyType;
+  final int? timesPerWeek;
+  final int? timesPerMonth;
+  final List<int>? specificWeekdays; // 1-7
+  final String? reminderTime; // HH:MM
+  final int? duration; // minutes
+  // Enums: EASY|MEDIUM|HARD
+  final String difficulty;
+  final bool? enableReminders;
+  final String? linkedGoal;
+  final List<String>? tags;
+  final List<String>? motivationalMessages;
+  // Enums: STANDARD|INCREMENTAL|TARGET
+  final String progressionType;
 
   CreateHabitDto({
     required this.name,
     this.description,
-    required this.category,
-    required this.frequency,
-    required this.targetCount,
-    this.iconName,
-    this.color,
+    this.motivation,
+    required this.iconName,
+    this.iconFamily,
+    required this.colorHex,
+    required this.categoryId,
+    this.templateId,
+    required this.frequencyType,
+    this.timesPerWeek,
+    this.timesPerMonth,
+    this.specificWeekdays,
+    this.reminderTime,
+    this.duration,
+    required this.difficulty,
+    this.enableReminders,
+    this.linkedGoal,
+    this.tags,
+    this.motivationalMessages,
+    required this.progressionType,
   });
 
   Map<String, dynamic> toJson() {
     return {
       'name': name,
-      'description': description,
-      'category': category,
-      'frequency': frequency,
-      'targetCount': targetCount,
+      if (description != null) 'description': description,
+      if (motivation != null) 'motivation': motivation,
       'iconName': iconName,
-      'color': color,
+      if (iconFamily != null) 'iconFamily': iconFamily,
+      'colorHex': colorHex,
+      'categoryId': categoryId,
+      if (templateId != null) 'templateId': templateId,
+      'frequencyType': frequencyType,
+      if (timesPerWeek != null) 'timesPerWeek': timesPerWeek,
+      if (timesPerMonth != null) 'timesPerMonth': timesPerMonth,
+      if (specificWeekdays != null) 'specificWeekdays': specificWeekdays,
+      if (reminderTime != null) 'reminderTime': reminderTime,
+      if (duration != null) 'duration': duration,
+      'difficulty': difficulty,
+      if (enableReminders != null) 'enableReminders': enableReminders,
+      if (linkedGoal != null) 'linkedGoal': linkedGoal,
+      if (tags != null) 'tags': tags,
+      if (motivationalMessages != null) 'motivationalMessages': motivationalMessages,
+      'progressionType': progressionType,
     };
   }
 }
@@ -661,25 +814,46 @@ class CreateHabitDto {
 class CreateTaskDto {
   final String title;
   final String? description;
-  final String priority;
-  final DateTime? dueDate;
-  final String? category;
+  final String priority; // must be one of: LOW, MEDIUM, HIGH
+  final DateTime? deadline; // backend expects 'deadline'
+  // Habit linking (optional)
+  final String? habitId;
+  final String? habitName;
+  // Optional extras supported by backend DTO
+  final DateTime? reminderAt;
+  final bool? isRecurring;
+  // DAILY | WEEKLY | MONTHLY
+  final String? recurringType;
+  final List<String>? subtasks;
+  final List<String>? tags;
 
   CreateTaskDto({
     required this.title,
     this.description,
     required this.priority,
-    this.dueDate,
-    this.category,
+    this.deadline,
+    this.habitId,
+    this.habitName,
+    this.reminderAt,
+    this.isRecurring,
+    this.recurringType,
+    this.subtasks,
+    this.tags,
   });
 
   Map<String, dynamic> toJson() {
     return {
       'title': title,
-      'description': description,
-      'priority': priority,
-      'dueDate': dueDate?.toIso8601String(),
-      'category': category,
+      if (description != null) 'description': description,
+      'priority': priority, // already uppercase
+      if (deadline != null) 'deadline': deadline!.toIso8601String(),
+      if (habitId != null) 'habitId': habitId,
+      if (habitName != null) 'habitName': habitName,
+      if (reminderAt != null) 'reminderAt': reminderAt!.toIso8601String(),
+      if (isRecurring != null) 'isRecurring': isRecurring,
+      if (recurringType != null) 'recurringType': recurringType,
+      if (subtasks != null) 'subtasks': subtasks,
+      if (tags != null) 'tags': tags,
     };
   }
 }
@@ -704,19 +878,111 @@ class LoginDto {
 class RegisterDto {
   final String email;
   final String password;
-  final String name;
+  final String username;
+  final String fullName;
+  final String? phone;
+  final String? city;
 
   RegisterDto({
     required this.email,
     required this.password,
-    required this.name,
+    required this.username,
+    required this.fullName,
+    this.phone,
+    this.city,
   });
 
   Map<String, dynamic> toJson() {
     return {
       'email': email,
       'password': password,
-      'name': name,
+      'username': username,
+      'fullName': fullName,
+      if (phone != null) 'phone': phone,
+      if (city != null) 'city': city,
     };
   }
+}
+
+// =================== BROTHERHOOD (микроблог) ===================
+
+enum ApiReactionType { FIRE, THUMBS_UP }
+
+class ApiBrotherhoodReply {
+  final String author;
+  final String authorInitials;
+  final DateTime time;
+  final String text;
+
+  ApiBrotherhoodReply({
+    required this.author,
+    required this.authorInitials,
+    required this.time,
+    required this.text,
+  });
+
+  factory ApiBrotherhoodReply.fromJson(Map<String, dynamic> json) {
+    return ApiBrotherhoodReply(
+      author: json['author'] as String,
+      authorInitials: json['authorInitials'] as String? ?? _initialsFrom(json['author'] as String),
+      time: DateTime.tryParse(json['time'] as String? ?? '') ?? DateTime.now(),
+      text: json['text'] as String,
+    );
+  }
+}
+
+class ApiBrotherhoodPost {
+  final String id;
+  final String author;
+  final String authorInitials;
+  final DateTime time;
+  final String text;
+  final String? topic;
+  final int fireReactions;
+  final int thumbsUpReactions;
+  final bool userReactedFire;
+  final bool userReactedThumbs;
+  final List<ApiBrotherhoodReply> replies;
+
+  ApiBrotherhoodPost({
+    required this.id,
+    required this.author,
+    required this.authorInitials,
+    required this.time,
+    required this.text,
+    this.topic,
+    required this.fireReactions,
+    required this.thumbsUpReactions,
+    required this.userReactedFire,
+    required this.userReactedThumbs,
+    required this.replies,
+  });
+
+  factory ApiBrotherhoodPost.fromJson(Map<String, dynamic> json) {
+    return ApiBrotherhoodPost(
+      id: json['id'] as String,
+      author: json['author'] as String,
+      authorInitials: json['authorInitials'] as String? ?? _initialsFrom(json['author'] as String),
+      time: DateTime.tryParse(json['time'] as String? ?? '') ?? DateTime.now(),
+      text: json['text'] as String,
+      topic: json['topic'] as String?,
+      fireReactions: (json['fireReactions'] as int?) ?? 0,
+      thumbsUpReactions: (json['thumbsUpReactions'] as int?) ?? 0,
+      userReactedFire: (json['userReactions'] is Map<String, dynamic>)
+          ? ((json['userReactions'] as Map<String, dynamic>)['fire'] as bool? ?? false)
+          : (json['userReactedFire'] as bool? ?? false),
+      userReactedThumbs: (json['userReactions'] is Map<String, dynamic>)
+          ? ((json['userReactions'] as Map<String, dynamic>)['thumbs'] as bool? ?? false)
+          : (json['userReactedThumbs'] as bool? ?? false),
+      replies: (json['replies'] as List<dynamic>? ?? const [])
+          .map((e) => ApiBrotherhoodReply.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
+String _initialsFrom(String name) {
+  final parts = name.trim().split(RegExp(r"\s+"));
+  final initials = parts.take(2).map((p) => p.isNotEmpty ? p[0] : '').join();
+  return initials.isNotEmpty ? initials.toUpperCase() : '?';
 }

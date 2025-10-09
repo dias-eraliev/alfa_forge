@@ -1,4 +1,4 @@
-import { IsString, IsEmail, IsOptional, IsBoolean, IsEnum, IsDateString } from 'class-validator';
+import { IsString, IsEmail, IsOptional, IsBoolean, IsEnum, IsDateString, IsArray, ArrayNotEmpty, ArrayUnique } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export enum Theme {
@@ -115,4 +115,17 @@ export class UploadAvatarDto {
   })
   @IsString({ message: 'URL аватара должен быть строкой' })
   avatarUrl: string;
+}
+
+export class SelectedHabitsDto {
+  @ApiProperty({
+    description: 'Список идентификаторов предустановленных привычек из онбординга',
+    example: ['early_rise', 'reading', 'workout'],
+    isArray: true,
+    type: String,
+  })
+  @IsArray({ message: 'habitIds должен быть массивом строк' })
+  @ArrayNotEmpty({ message: 'habitIds не должен быть пустым' })
+  @ArrayUnique({ message: 'habitIds содержит дублирующиеся значения' })
+  habitIds: string[];
 }

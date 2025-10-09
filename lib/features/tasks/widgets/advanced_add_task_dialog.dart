@@ -3,6 +3,8 @@ import '../../../app/theme.dart';
 import '../models/task_model.dart';
 import 'date_time_picker.dart';
 import 'priority_selector.dart';
+import '../../../core/services/habits_service.dart';
+import '../../../core/models/api_models.dart';
 
 class AdvancedAddTaskDialog extends StatefulWidget {
   final Function(TaskModel) onTaskAdded;
@@ -28,7 +30,9 @@ class _AdvancedAddTaskDialogState extends State<AdvancedAddTaskDialog>
   late DateTime _selectedDeadline;
   late TaskPriority _selectedPriority;
   late TaskStatus _selectedStatus;
-  String? _selectedHabit;
+  // Selected habit
+  String? _selectedHabitId;
+  String? _selectedHabitName;
   List<String> _selectedTags = [];
   bool _isRecurring = false;
   RecurringType? _recurringType;
@@ -40,15 +44,11 @@ class _AdvancedAddTaskDialogState extends State<AdvancedAddTaskDialog>
   late AnimationController _progressAnimationController;
   late Animation<double> _progressAnimation;
 
-  // Список доступных привычек (можно загружать из базы данных)
-  final List<String> _availableHabits = [
-    'Бег',
-    'Чтение',
-    'Медитация',
-    'Спорт',
-    'Изучение языков',
-    'Программирование',
-  ];
+  // Habits from API
+  final _habitsService = HabitsService();
+  List<ApiHabit> _availableHabits = [];
+  bool _loadingHabits = false;
+  String? _habitsError;
 
   // Список популярных тегов
   final List<String> _availableTags = [
@@ -74,7 +74,8 @@ class _AdvancedAddTaskDialogState extends State<AdvancedAddTaskDialog>
       _selectedDeadline = task.deadline;
       _selectedPriority = task.priority;
       _selectedStatus = task.status;
-      _selectedHabit = task.habitName;
+  _selectedHabitId = task.habitId;
+  _selectedHabitName = task.habitName;
       _selectedTags = List.from(task.tags);
       _isRecurring = task.isRecurring;
       _recurringType = task.recurringType;
@@ -99,6 +100,9 @@ class _AdvancedAddTaskDialogState extends State<AdvancedAddTaskDialog>
     ));
     
     _updateProgress();
+
+    // Load habits asynchronously
+    _loadHabits();
   }
 
   @override
@@ -113,6 +117,35 @@ class _AdvancedAddTaskDialogState extends State<AdvancedAddTaskDialog>
   void _updateProgress() {
     final progress = (_currentPage + 1) / _totalPages;
     _progressAnimationController.animateTo(progress);
+  }
+
+  Future<void> _loadHabits() async {
+    setState(() {
+      _loadingHabits = true;
+      _habitsError = null;
+    });
+    try {
+      final resp = await _habitsService.getHabits(isActive: true);
+      if (resp.isSuccess && resp.data != null) {
+        setState(() {
+          _availableHabits = resp.data!;
+        });
+      } else {
+        setState(() {
+          _habitsError = resp.error ?? 'Не удалось загрузить привычки';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _habitsError = 'Ошибка загрузки привычек: $e';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingHabits = false;
+        });
+      }
+    }
   }
 
   void _nextPage() {
@@ -146,7 +179,8 @@ class _AdvancedAddTaskDialogState extends State<AdvancedAddTaskDialog>
         deadline: _selectedDeadline,
         priority: _selectedPriority,
         status: _selectedStatus,
-        habitName: _selectedHabit,
+        habitId: _selectedHabitId,
+        habitName: _selectedHabitName,
         tags: _selectedTags,
         createdAt: widget.initialTask?.createdAt ?? DateTime.now(),
         updatedAt: DateTime.now(),
@@ -492,7 +526,14 @@ class _AdvancedAddTaskDialogState extends State<AdvancedAddTaskDialog>
                   _selectedPriority = template.defaultPriority;
                   _selectedDeadline = DateTime.now().add(template.defaultDeadlineOffset);
                   _selectedTags = List.from(template.defaultTags);
-                  _selectedHabit = template.habitName;
+                  // Map template habit name to available habit id if possible
+                  _selectedHabitName = template.habitName;
+                  if (_selectedHabitName != null && _selectedHabitName!.isNotEmpty) {
+                    final match = _availableHabits.where((h) => h.name == _selectedHabitName).toList();
+                    _selectedHabitId = match.isNotEmpty ? match.first.id : null;
+                  } else {
+                    _selectedHabitId = null;
+                  }
                 });
               },
               child: Container(
@@ -584,44 +625,197 @@ class _AdvancedAddTaskDialogState extends State<AdvancedAddTaskDialog>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Связь с привычкой',
+          'Связать с привычкой',
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.w600,
           ),
         ),
         const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            border: Border.all(color: PRIMETheme.line),
-            borderRadius: BorderRadius.circular(12),
+        if (_loadingHabits) ...[
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: LinearProgressIndicator(color: PRIMETheme.primary),
           ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String?>(
-              value: _selectedHabit,
-              isExpanded: true,
-              hint: const Text('Выберите привычку (опционально)'),
-              items: [
-                const DropdownMenuItem<String?>(
-                  value: null,
-                  child: Text('Без привычки'),
+        ] else if (_habitsError != null) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: PRIMETheme.warn.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: PRIMETheme.warn),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded, color: PRIMETheme.warn),
+                const SizedBox(width: 8),
+                Expanded(child: Text(_habitsError!, style: const TextStyle(color: PRIMETheme.warn))),
+                TextButton(
+                  onPressed: _loadHabits,
+                  child: const Text('Повторить', style: TextStyle(color: PRIMETheme.warn)),
                 ),
-                ..._availableHabits.map((habit) {
-                  return DropdownMenuItem<String>(
-                    value: habit,
-                    child: Text(habit),
-                  );
-                }),
               ],
-              onChanged: (value) {
-                setState(() {
-                  _selectedHabit = value;
-                });
-              },
             ),
           ),
-        ),
+        ] else ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              border: Border.all(color: PRIMETheme.line),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String?>(
+                isExpanded: true,
+                hint: const Text('Выберите привычку (опционально)'),
+                value: _selectedHabitId,
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('Без привычки'),
+                  ),
+                  ..._availableHabits.map((habit) {
+                    return DropdownMenuItem<String?>(
+                      value: habit.id,
+                      child: Text(habit.name),
+                    );
+                  }).toList(),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _selectedHabitId = value;
+                    _selectedHabitName = _availableHabits.firstWhere(
+                      (h) => h.id == value,
+                      orElse: () => ApiHabit(
+                        id: '',
+                        name: '',
+                        description: null,
+                        category: 'other',
+                        frequency: 'DAILY',
+                        targetCount: 1,
+                        iconName: null,
+                        colorHex: null,
+                        isActive: true,
+                        createdAt: DateTime.now(),
+                        completions: const [],
+                      ),
+                    ).name;
+                  });
+                },
+              ),
+            ),
+          ),
+        ],
       ],
+    );
+  }
+
+  Widget _buildReminderOptions() {
+    final enabled = _reminderAt != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Напоминание',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Spacer(),
+            Switch(
+              value: enabled,
+              onChanged: (val) {
+                setState(() {
+                  if (val) {
+                    _reminderAt = DateTime.now().add(const Duration(hours: 1));
+                  } else {
+                    _reminderAt = null;
+                  }
+                });
+              },
+              activeColor: PRIMETheme.primary,
+            ),
+          ],
+        ),
+        if (enabled) ...[
+          const SizedBox(height: 8),
+          DateTimePicker(
+            selectedDateTime: _reminderAt!,
+            onDateTimeChanged: (dt) {
+              setState(() {
+                _reminderAt = dt;
+              });
+            },
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildNavigationButtons() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: PRIMETheme.line)),
+      ),
+      child: Row(
+        children: [
+          if (_currentPage > 0) ...[
+            Expanded(
+              child: TextButton(
+                onPressed: _previousPage,
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: const Text(
+                  'Назад',
+                  style: TextStyle(
+                    color: PRIMETheme.sandWeak,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+          ] else ...[
+            Expanded(
+              child: TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: const Text(
+                  'Отмена',
+                  style: TextStyle(
+                    color: PRIMETheme.sandWeak,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+          ],
+          Expanded(
+            flex: 2,
+            child: ElevatedButton(
+              onPressed: _currentPage == _totalPages - 1 ? _saveTask : _nextPage,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: PRIMETheme.primary,
+                foregroundColor: PRIMETheme.sand,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text(
+                _currentPage == _totalPages - 1 ? 'Создать задачу' : 'Далее',
+                style: const TextStyle(fontSize: 16),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -746,112 +940,7 @@ class _AdvancedAddTaskDialogState extends State<AdvancedAddTaskDialog>
     );
   }
 
-  Widget _buildReminderOptions() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text(
-              'Напоминание',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const Spacer(),
-            Switch(
-              value: _reminderAt != null,
-              onChanged: (value) {
-                setState(() {
-                  if (value) {
-                    _reminderAt = _selectedDeadline.subtract(const Duration(hours: 1));
-                  } else {
-                    _reminderAt = null;
-                  }
-                });
-              },
-              activeColor: PRIMETheme.primary,
-            ),
-          ],
-        ),
-        if (_reminderAt != null) ...[
-          const SizedBox(height: 8),
-          Text(
-            'Напомнить за час до дедлайна',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: PRIMETheme.sandWeak,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildNavigationButtons() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: PRIMETheme.line)),
-      ),
-      child: Row(
-        children: [
-          if (_currentPage > 0) ...[
-            Expanded(
-              child: TextButton(
-                onPressed: _previousPage,
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                child: const Text(
-                  'Назад',
-                  style: TextStyle(
-                    color: PRIMETheme.sandWeak,
-                    fontSize: 16,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-          ] else ...[
-            Expanded(
-              child: TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                child: const Text(
-                  'Отмена',
-                  style: TextStyle(
-                    color: PRIMETheme.sandWeak,
-                    fontSize: 16,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-          ],
-          Expanded(
-            flex: 2,
-            child: ElevatedButton(
-              onPressed: _currentPage == _totalPages - 1 ? _saveTask : _nextPage,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: PRIMETheme.primary,
-                foregroundColor: PRIMETheme.sand,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: Text(
-                _currentPage == _totalPages - 1 ? 'Создать задачу' : 'Далее',
-                style: const TextStyle(fontSize: 16),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // (duplicate malformed _buildHabitSelector removed)
 
   Color _getStatusColor(TaskStatus status) {
     switch (status) {

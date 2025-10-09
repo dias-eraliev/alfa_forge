@@ -1,7 +1,7 @@
 import { Controller, Get, Put, Body, UseGuards, Request, Post, Param } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { UsersService } from './users.service';
-import { UpdateUserProfileDto, UpdateUserSettingsDto, UploadAvatarDto } from './dto/users.dto';
+import { UpdateUserProfileDto, UpdateUserSettingsDto, UploadAvatarDto, SelectedHabitsDto } from './dto/users.dto';
 
 @Controller('users')
 @UseGuards(AuthGuard('jwt'))
@@ -31,6 +31,11 @@ export class UsersController {
   @Post('complete-onboarding')
   async completeOnboarding(@Request() req: any) {
     return this.usersService.completeOnboarding(req.user.id);
+  }
+
+  @Post('habits/selected')
+  async saveSelectedHabits(@Request() req: any, @Body() dto: SelectedHabitsDto) {
+    return this.usersService.saveSelectedHabits(req.user.id, dto.habitIds);
   }
 
   @Get('stats')

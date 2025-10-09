@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../shared/bottom_nav_scaffold.dart';
 import '../../app/theme.dart';
 import '../../core/models/api_models.dart';
+import '../../core/i18n/labels.dart';
 import 'providers/path_providers.dart';
 
 class PathPage extends ConsumerStatefulWidget {
@@ -91,8 +92,16 @@ class _PathPageState extends ConsumerState<PathPage> with TickerProviderStateMix
                   _buildDailyMetrics(context, isSmallScreen, userMetrics, dailyStats),
                   SizedBox(height: isSmallScreen ? 20 : 24),
 
+                  // Цитата дня
+                  _buildDailyQuoteSection(context, isSmallScreen),
+                  SizedBox(height: isSmallScreen ? 20 : 24),
+
                   // Быстрые победы секция
                   _buildQuickWinsSection(context, isSmallScreen, dailyStats),
+                  SizedBox(height: isSmallScreen ? 20 : 24),
+
+                  // Прогресс по сферам
+                  _buildSphereProgressSection(context, isSmallScreen),
                   SizedBox(height: isSmallScreen ? 20 : 24),
 
                   // Ежедневные привычки
@@ -324,6 +333,154 @@ class _PathPageState extends ConsumerState<PathPage> with TickerProviderStateMix
     );
   }
 
+  // Цитата дня
+  Widget _buildDailyQuoteSection(BuildContext context, bool isSmallScreen) {
+    return Consumer(
+      builder: (context, ref, child) {
+        final quote = ref.watch(pathPageControllerProvider).dailyQuote;
+
+        if (quote == null || quote.trim().isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return Container(
+          padding: EdgeInsets.all(isSmallScreen ? 14 : 16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: PRIMETheme.primary.withOpacity(0.25)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.format_quote, color: PRIMETheme.primary, size: isSmallScreen ? 18 : 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  quote,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontSize: isSmallScreen ? 14 : 16,
+                        fontStyle: FontStyle.italic,
+                        color: PRIMETheme.sand,
+                      ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Прогресс по сферам
+  Widget _buildSphereProgressSection(BuildContext context, bool isSmallScreen) {
+    return Consumer(
+      builder: (context, ref, child) {
+        final sphereProgress = ref.watch(pathPageControllerProvider).sphereProgress;
+
+        if (sphereProgress.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        final entries = sphereProgress.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+
+        return Container(
+          padding: EdgeInsets.all(isSmallScreen ? 14 : 16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: PRIMETheme.line),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.donut_large, color: PRIMETheme.primary, size: isSmallScreen ? 18 : 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    RuLabels.resolve(RuLabels.general, 'spheres'),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontSize: isSmallScreen ? 18 : 20,
+                        ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ...entries.map((e) {
+                final label = RuLabels.resolve(RuLabels.spheres, e.key);
+                final color = _mapSphereColor(e.key);
+                final value = (e.value).clamp(0.0, 1.0);
+                final percent = (value * 100).toInt();
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              label,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: PRIMETheme.sand),
+                            ),
+                          ),
+                          Text('$percent%', style: Theme.of(context).textTheme.labelMedium?.copyWith(color: PRIMETheme.sandWeak)),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: LinearProgressIndicator(
+                          value: value,
+                          minHeight: 8,
+                          backgroundColor: PRIMETheme.line,
+                          valueColor: AlwaysStoppedAnimation<Color>(color),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Лейблы сфер теперь берём из RuLabels; локальный маппер удалён.
+
+  Color _mapSphereColor(String key) {
+    switch (key.toLowerCase()) {
+      case 'body':
+        return Colors.teal;
+      case 'mind':
+        return Colors.purple;
+      case 'finance':
+        return Colors.amber.shade700;
+      case 'brotherhood':
+        return Colors.indigo;
+      default:
+        return PRIMETheme.primary;
+    }
+  }
+
   // Сегодняшние привычки
   Widget _buildTodayHabits(BuildContext context, bool isSmallScreen, bool isLoading) {
     return Column(
@@ -332,7 +489,7 @@ class _PathPageState extends ConsumerState<PathPage> with TickerProviderStateMix
         Row(
           children: [
             Text(
-              'Привычки сегодня',
+              RuLabels.resolve(RuLabels.general, 'todayHabits'),
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
                 fontSize: isSmallScreen ? 18 : 22,
               ),
@@ -346,7 +503,7 @@ class _PathPageState extends ConsumerState<PathPage> with TickerProviderStateMix
                 color: PRIMETheme.primary,
               ),
               label: Text(
-                'Все',
+                RuLabels.resolve(RuLabels.general, 'all'),
                 style: TextStyle(
                   color: PRIMETheme.primary,
                   fontSize: isSmallScreen ? 12 : 14,
@@ -362,7 +519,9 @@ class _PathPageState extends ConsumerState<PathPage> with TickerProviderStateMix
             
             return todayHabitsAsync.when(
               loading: () => _buildLoadingIndicator('Загружаем привычки...'),
-              error: (error, stack) => _buildErrorCard('Ошибка загрузки привычек: $error'),
+              error: (error, stack) => _buildErrorCard(
+                'Не удалось загрузить привычки. Потяните вниз, чтобы обновить.',
+              ),
               data: (habits) {
                 if (habits.isEmpty) {
                   return _buildEmptyStateCard(
@@ -427,7 +586,9 @@ class _PathPageState extends ConsumerState<PathPage> with TickerProviderStateMix
             
             return quickTasksAsync.when(
               loading: () => _buildLoadingIndicator('Загружаем задачи...'),
-              error: (error, stack) => _buildErrorCard('Ошибка загрузки задач: $error'),
+              error: (error, stack) => _buildErrorCard(
+                'Не удалось загрузить задачи. Потяните вниз, чтобы обновить.',
+              ),
               data: (tasks) {
                 if (tasks.isEmpty) {
                   return _buildEmptyStateCard(

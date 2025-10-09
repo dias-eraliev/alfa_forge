@@ -60,12 +60,12 @@ class HabitsService {
   Future<ApiResponse<ApiHabitCompletion>> completeHabit(
     String habitId, {
     DateTime? date,
-    int count = 1,
     String? notes,
   }) async {
+    final d = date ?? DateTime.now();
     final body = <String, dynamic>{
-      'date': (date ?? DateTime.now()).toIso8601String(),
-      'count': count,
+      // Бэкенд ждёт строку формата YYYY-MM-DD
+      'date': d.toIso8601String().substring(0, 10),
       if (notes != null) 'notes': notes,
     };
 
@@ -87,24 +87,32 @@ class HabitsService {
     );
   }
 
-  // Получить статистику привычки
+  // Получить статистику привычки за период
   Future<ApiResponse<Map<String, dynamic>>> getHabitStats(
     String habitId, {
-    int days = 30,
+    required DateTime startDate,
+    required DateTime endDate,
   }) async {
+    String fmt(DateTime d) => d.toIso8601String().substring(0, 10); // YYYY-MM-DD
+
     return await _apiClient.get<Map<String, dynamic>>(
       '/habits/$habitId/stats',
-      queryParams: {'days': days.toString()},
+      queryParams: {
+        'startDate': fmt(startDate),
+        'endDate': fmt(endDate),
+      },
     );
   }
 
   // Получить категории привычек
-  Future<ApiResponse<List<String>>> getHabitCategories() async {
-    return await _apiClient.get<List<String>>(
+  Future<ApiResponse<List<ApiHabitCategory>>> getHabitCategories() async {
+    return await _apiClient.get<List<ApiHabitCategory>>(
       '/habits/categories/list',
       fromJson: (json) {
         final List<dynamic> categories = json['data'] ?? json;
-        return categories.cast<String>();
+        return categories
+            .map((c) => ApiHabitCategory.fromJson(c as Map<String, dynamic>))
+            .toList();
       },
     );
   }

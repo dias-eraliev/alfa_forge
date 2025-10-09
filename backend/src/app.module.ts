@@ -12,6 +12,7 @@ import { HealthModule } from './health/health.module';
 import { ExercisesModule } from './exercises/exercises.module';
 import { ProgressModule } from './progress/progress.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { BrotherhoodModule } from './brotherhood/brotherhood.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     ExercisesModule,
     ProgressModule,
     NotificationsModule,
+    BrotherhoodModule,
   ],
   controllers: [AppController],
   providers: [AppService],

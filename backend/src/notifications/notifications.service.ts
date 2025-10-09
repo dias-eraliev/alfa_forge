@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { 
   CreateNotificationDto, 
@@ -11,8 +11,8 @@ import {
   BulkNotificationActionDto,
   SendNotificationDto,
   NotificationStatsDto,
-  NotificationPriority,
-  NotificationStatus,
+  // NotificationPriority,
+  // NotificationStatus,
   QuoteCategory
 } from './dto/notifications.dto';
 
@@ -23,27 +23,34 @@ export class NotificationsService {
   // ========== NOTIFICATIONS ==========
 
   // Простые методы для уведомлений (заглушки)
-  async getUserNotifications(userId: string, filters?: NotificationFilterDto) {
+  async getUserNotifications(_userId: string, _filters?: NotificationFilterDto) {
+    // помечаем параметры как использованные, чтобы подавить noUnused
+    void _userId; void _filters;
     return [];
   }
 
-  async createNotification(userId: string, createNotificationDto: CreateNotificationDto) {
+  async createNotification(_userId: string, _createNotificationDto: CreateNotificationDto) {
+    void _userId; void _createNotificationDto;
     return { message: 'Уведомление создано' };
   }
 
-  async updateNotification(id: string, userId: string, updateNotificationDto: UpdateNotificationDto) {
+  async updateNotification(_id: string, _userId: string, _updateNotificationDto: UpdateNotificationDto) {
+    void _id; void _userId; void _updateNotificationDto;
     return { message: 'Уведомление обновлено' };
   }
 
-  async deleteNotification(id: string, userId: string) {
+  async deleteNotification(_id: string, _userId: string) {
+    void _id; void _userId;
     return { message: 'Уведомление удалено' };
   }
 
-  async markAsRead(id: string, userId: string) {
+  async markAsRead(_id: string, _userId: string) {
+    void _id; void _userId;
     return { message: 'Уведомление отмечено как прочитанное' };
   }
 
-  async markAllAsRead(userId: string) {
+  async markAllAsRead(_userId: string) {
+    void _userId;
     return { message: 'Все уведомления отмечены как прочитанные' };
   }
 
@@ -271,10 +278,80 @@ export class NotificationsService {
   async sendNotification(sendNotificationDto: SendNotificationDto) {
     const { userIds, notification } = sendNotificationDto;
     const users = Array.isArray(userIds) ? userIds : [userIds];
+    // Получаем все playerId пользователей
+    const tokens = await this.prisma.deviceToken.findMany({
+      where: { userId: { in: users } },
+      select: { playerId: true },
+    });
 
-    return {
-      message: `Уведомление отправлено ${users.length} пользователям`,
-      notification
-    };
+    const appId = process.env.ONESIGNAL_APP_ID;
+    const apiKey = process.env.ONESIGNAL_REST_API_KEY;
+
+    if (!appId || !apiKey) {
+      return {
+        message: `ONESIGNAL_APP_ID/ONESIGNAL_REST_API_KEY не заданы. Пропускаем реальную отправку.`,
+        stats: { users: users.length, devices: tokens.length },
+      };
+    }
+
+    // Формируем payload для OneSignal (v1 notifications endpoint совместим)
+    const playerIds = tokens.map(t => t.playerId);
+
+    const body = {
+      app_id: appId,
+      include_player_ids: playerIds.length ? playerIds : undefined,
+      // fallback: если нет playerIds, можем отправить по external_user_ids (при условии вызова OneSignal.login(externalId) на клиенте)
+      include_external_user_ids: users.length ? users : undefined,
+      target_channel: 'push',
+      headings: { en: notification.title },
+      contents: { en: notification.message },
+      data: notification.data || undefined,
+      url: notification.actionUrl || undefined,
+    } as any;
+
+    const fetchFn: any = (globalThis as any).fetch;
+    if (!fetchFn) {
+      return { message: 'Fetch недоступен в окружении Node. Используйте Node 18+ или настройте polyfill.' };
+    }
+
+    const resp = await fetchFn('https://api.onesignal.com/notifications', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+        authorization: `Key ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const result = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      return { message: 'Ошибка отправки в OneSignal', status: resp.status, result };
+    }
+
+    return { message: 'Уведомление отправлено в OneSignal', result };
+  }
+
+  // ========== DEVICE TOKEN MANAGEMENT ==========
+  async registerDevice(userId: string, playerId: string, platform: string) {
+    // upsert по playerId
+    const existing = await this.prisma.deviceToken.findUnique({ where: { playerId } });
+    if (existing) {
+      return this.prisma.deviceToken.update({
+        where: { playerId },
+        data: { userId, platform, lastActive: new Date() },
+      });
+    }
+    return this.prisma.deviceToken.create({
+      data: { userId, playerId, platform },
+    });
+  }
+
+  async unregisterDevice(userId: string, playerId: string) {
+    const existing = await this.prisma.deviceToken.findUnique({ where: { playerId } });
+    if (!existing || existing.userId !== userId) {
+      return { message: 'Токен не найден или не принадлежит пользователю' };
+    }
+    await this.prisma.deviceToken.delete({ where: { playerId } });
+    return { message: 'Токен удалён' };
   }
 }

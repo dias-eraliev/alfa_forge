@@ -11,6 +11,9 @@ class OnboardingData {
   // Имя пользователя
   final String? username;
   
+  // Пароль (вводится в онбординге, используется при регистрации)
+  final String? password;
+  
   // Привычки
   final List<HabitModel> selectedHabits;
   final bool isCompleted;
@@ -21,6 +24,7 @@ class OnboardingData {
     this.phone,
     this.city,
     this.username,
+    this.password,
     this.selectedHabits = const [],
     this.isCompleted = false,
   });
@@ -31,6 +35,7 @@ class OnboardingData {
     String? phone,
     String? city,
     String? username,
+    String? password,
     List<HabitModel>? selectedHabits,
     bool? isCompleted,
   }) {
@@ -40,6 +45,7 @@ class OnboardingData {
       phone: phone ?? this.phone,
       city: city ?? this.city,
       username: username ?? this.username,
+      password: password ?? this.password,
       selectedHabits: selectedHabits ?? this.selectedHabits,
       isCompleted: isCompleted ?? this.isCompleted,
     );
@@ -52,6 +58,7 @@ class OnboardingData {
       'phone': phone,
       'city': city,
       'username': username,
+      'password': password,
       'selectedHabits': selectedHabits.map((habit) => habit.toJson()).toList(),
       'isCompleted': isCompleted,
     };
@@ -64,6 +71,7 @@ class OnboardingData {
       phone: json['phone'] as String?,
       city: json['city'] as String?,
       username: json['username'] as String?,
+      password: json['password'] as String?,
       selectedHabits: (json['selectedHabits'] as List<dynamic>?)
               ?.map((item) => HabitModel.fromJson(item as Map<String, dynamic>))
               .toList() ??
@@ -85,6 +93,8 @@ class OnboardingData {
            email!.isNotEmpty &&
            username != null && 
            username!.isNotEmpty && 
+           password != null &&
+           password!.isNotEmpty &&
            selectedHabits.isNotEmpty;
   }
 
@@ -103,6 +113,7 @@ class OnboardingData {
           phone == other.phone &&
           city == other.city &&
           username == other.username &&
+          password == other.password &&
           _listEquals(selectedHabits, other.selectedHabits) &&
           isCompleted == other.isCompleted;
 
@@ -113,6 +124,7 @@ class OnboardingData {
       phone.hashCode ^
       city.hashCode ^
       username.hashCode ^
+  password.hashCode ^
       selectedHabits.hashCode ^
       isCompleted.hashCode;
 

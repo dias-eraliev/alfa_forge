@@ -79,9 +79,23 @@ class ProgressService {
       final response = await _apiClient.get('/dashboard/quote');
       
       if (response.isSuccess && response.data != null) {
-        final quote = response.data['quote'] as String? ?? 
-                     response.data['message'] as String? ??
-                     response.data.toString();
+        // Ответ может быть строкой или объектом { text, author, ... }
+        String quote;
+        final data = response.data;
+
+        if (data is String) {
+          // Простой строковый ответ
+          quote = data;
+        } else if (data is Map<String, dynamic>) {
+          // Предпочитаем поле 'text', иначе пробуем 'quote' или 'message'
+          quote = (data['text'] as String?) ??
+                  (data['quote'] as String?) ??
+                  (data['message'] as String?) ??
+                  data.toString();
+        } else {
+          // Непредвиденный формат
+          quote = data.toString();
+        }
         print('💭 Daily quote received successfully');
         return ApiResponse.success(quote);
       } else {

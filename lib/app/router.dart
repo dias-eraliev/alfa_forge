@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../core/providers/auth_provider.dart';
 import '../core/services/auth_service.dart';
 import '../core/api/api_client.dart';
 import '../features/auth/pages/login_page.dart';
@@ -18,7 +17,6 @@ import '../features/onboarding/pages/name_page.dart';
 import '../features/onboarding/pages/habits_selection_page.dart';
 import '../features/onboarding/pages/ready_page.dart';
 import '../features/onboarding/controllers/onboarding_controller.dart';
-import '../features/finance/ui/finance_main_screen.dart';
 import '../features/notifications/ui/notifications_settings_page.dart';
 
 final router = GoRouter(
@@ -48,8 +46,10 @@ final router = GoRouter(
         return '/intro';
       }
       
-      // Разрешаем доступ только к публичным роутам
-      if (currentPath == '/intro' || currentPath == '/login') {
+      // Разрешаем доступ к публичным и онбординг-роутам (регистрация проходит в онбординге)
+      final isPublic = currentPath == '/intro' || currentPath == '/login';
+      final isOnboarding = currentPath.startsWith('/onboarding');
+      if (isPublic || isOnboarding) {
         print('✅ Staying on public route: $currentPath');
         return null; // Остаемся на текущем роуте
       }
@@ -144,8 +144,34 @@ final router = GoRouter(
     GoRoute(path: '/gto/ai-motion', builder: (c, s) => const AIMotionPage()),
     GoRoute(path: '/gto/workout', builder: (c, s) => const AIMotionPage()),
     
-    // Finance routes
-    GoRoute(path: '/finance', builder: (c, s) => const FinanceMainScreen()),
+    // Finance route (temporarily disabled module)
+    GoRoute(
+      path: '/finance',
+      builder: (c, s) => const Scaffold(
+        body: Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.account_balance_wallet, size: 48, color: Colors.grey),
+                SizedBox(height: 16),
+                Text(
+                  'Модуль «Финансы» временно отключен',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 18),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Мы работаем над улучшениями. Возвращайтесь позже.',
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
     
     // Notifications routes
     GoRoute(path: '/notifications', builder: (c, s) => const NotificationsSettingsPage()),

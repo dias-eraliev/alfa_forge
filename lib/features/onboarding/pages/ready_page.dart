@@ -12,15 +12,41 @@ class ReadyPage extends ConsumerWidget {
 
   void _completeOnboarding(BuildContext context, WidgetRef ref) async {
     final controller = ref.read(onboardingControllerProvider);
+    final auth = context.read<AuthProvider>();
     
     try {
       print('🚀 Starting onboarding completion...');
+
+      // 1) Регистрация, если пользователь ещё не авторизован
+      if (!auth.isAuthenticated) {
+        final data = controller.data;
+        if ((data.email ?? '').isEmpty ||
+            (data.password ?? '').isEmpty ||
+            (data.username ?? '').isEmpty ||
+            (data.fullName ?? '').isEmpty) {
+          throw Exception('Не заполнены обязательные поля для регистрации');
+        }
+
+        final ok = await auth.register(
+          email: data.email!.trim(),
+          password: data.password!,
+          username: data.username!.trim(),
+          fullName: data.fullName!.trim(),
+          phone: data.phone,
+          city: data.city,
+        );
+
+        if (!ok) {
+          throw Exception(auth.errorMessage ?? 'Не удалось зарегистрироваться');
+        }
+      }
+
+      // 2) Завершаем онбординг (профиль, привычки, флаг)
       await controller.completeOnboarding();
-      
+
+      // 3) Редирект на главный экран приложения
       if (context.mounted) {
-        print('🏠 Forcing router refresh through auth-check...');
-        // Принудительно перенаправляем через auth-check, чтобы router.redirect сработал
-        context.go('/auth-check');
+        context.go('/');
       }
     } catch (e) {
       print('❌ Onboarding completion error: $e');
@@ -130,6 +156,50 @@ class ReadyPage extends ConsumerWidget {
                   ),
                   
                   SizedBox(height: isSmallScreen ? 32 : 48),
+                  
+                  // Поле для пароля
+                  Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.all(isSmallScreen ? 20 : 24),
+                    decoration: BoxDecoration(
+                      color: PRIMETheme.bg,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: PRIMETheme.primary.withOpacity(0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'БЕЗОПАСНОСТЬ',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                color: PRIMETheme.primary,
+                                fontSize: isSmallScreen ? 14 : 16,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 1,
+                              ),
+                        ),
+                        const SizedBox(height: 12),
+                        _PasswordField(
+                          initial: controller.data.password ?? '',
+                          onChanged: (v) => ref.read(onboardingControllerProvider).setPassword(v),
+                          isSmall: isSmallScreen,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Пароль будет использован для создания аккаунта',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: PRIMETheme.sandWeak,
+                                fontSize: isSmallScreen ? 12 : 13,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  SizedBox(height: isSmallScreen ? 20 : 28),
                   
                   // Показываем выбранные данные
                   Container(
@@ -380,6 +450,85 @@ class ReadyPage extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _PasswordField extends StatefulWidget {
+  final String initial;
+  final ValueChanged<String> onChanged;
+  final bool isSmall;
+  const _PasswordField({required this.initial, required this.onChanged, required this.isSmall});
+
+  @override
+  State<_PasswordField> createState() => _PasswordFieldState();
+}
+
+class _PasswordFieldState extends State<_PasswordField> {
+  late TextEditingController _controller;
+  bool _obscure = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initial);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextFormField(
+      controller: _controller,
+      obscureText: _obscure,
+      onChanged: widget.onChanged,
+      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+            fontSize: widget.isSmall ? 14 : 16,
+            color: PRIMETheme.sand,
+          ),
+      decoration: InputDecoration(
+        labelText: 'Пароль',
+        hintText: 'Введите пароль (минимум 6 символов)',
+        prefixIcon: Icon(
+          Icons.lock_outline,
+          color: PRIMETheme.sandWeak,
+          size: widget.isSmall ? 20 : 24,
+        ),
+        suffixIcon: IconButton(
+          icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, color: PRIMETheme.sandWeak),
+          onPressed: () => setState(() => _obscure = !_obscure),
+        ),
+        labelStyle: TextStyle(
+          color: PRIMETheme.sandWeak,
+          fontSize: widget.isSmall ? 14 : 16,
+        ),
+        hintStyle: TextStyle(
+          color: PRIMETheme.sandWeak.withValues(alpha: 0.6),
+          fontSize: widget.isSmall ? 14 : 16,
+        ),
+        filled: true,
+        fillColor: PRIMETheme.bg,
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: widget.isSmall ? 16 : 20,
+          vertical: widget.isSmall ? 16 : 20,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: PRIMETheme.line, width: 1),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: PRIMETheme.line, width: 1),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: PRIMETheme.primary, width: 2),
+        ),
+      ),
     );
   }
 }

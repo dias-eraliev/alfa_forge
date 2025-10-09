@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../shared/bottom_nav_scaffold.dart';
 import '../../app/theme.dart';
+import '../../core/services/brotherhood_service.dart';
+import '../../core/models/api_models.dart';
 
 class BrotherhoodPage extends StatefulWidget {
   const BrotherhoodPage({super.key});
@@ -16,6 +18,12 @@ class _BrotherhoodPageState extends State<BrotherhoodPage> with TickerProviderSt
   late AnimationController _fabAnimationController;
   late Animation<double> _fabScaleAnimation;
   
+  // API
+  final BrotherhoodService _service = BrotherhoodService();
+  bool _apiAvailable = true;
+  final List<String> _topics = const ['Здоровье', 'Деньги', 'Навык', 'Дом'];
+  String _selectedTopic = 'Здоровье';
+
   // Состояние реакций и сообщений
   final Map<String, Map<String, bool>> _userReactions = {};
   final Map<String, List<Message>> _messagesCache = {};
@@ -38,6 +46,8 @@ class _BrotherhoodPageState extends State<BrotherhoodPage> with TickerProviderSt
     
     _fabAnimationController.repeat(reverse: true);
     _loadInitialMessages();
+    _loadFromApi();
+    _loadTopicFromApi(_selectedTopic);
   }
 
   @override
@@ -52,6 +62,83 @@ class _BrotherhoodPageState extends State<BrotherhoodPage> with TickerProviderSt
     _messagesCache['feed'] = _getAllMessages();
     _messagesCache['topics'] = _getTopicMessages();
     _messagesCache['my'] = _getMyMessages();
+  }
+
+  Future<void> _loadFromApi() async {
+    // Загружаем ленту и мои посты. Темы грузим отдельно методом _loadTopicFromApi
+    try {
+      final feedResp = await _service.getFeed();
+      final mineResp = await _service.getMine();
+
+      if (feedResp.isSuccess && feedResp.data != null) {
+        final list = feedResp.data!.map(_mapApiPostToMessage).toList();
+        _messagesCache['feed'] = list;
+        for (final m in list) {
+          if (m.id != null) {
+            _userReactions[m.id!] = {
+              'fire': m.userFire,
+              'thumbs': m.userThumbs,
+            };
+          }
+        }
+      }
+      if (mineResp.isSuccess && mineResp.data != null) {
+        final list = mineResp.data!.map(_mapApiPostToMessage).toList();
+        _messagesCache['my'] = list;
+      }
+      setState(() {
+        _apiAvailable = true;
+      });
+    } catch (_) {
+      setState(() {
+        _apiAvailable = false;
+      });
+    }
+  }
+
+  Future<void> _loadTopicFromApi(String topic) async {
+    try {
+      final topicResp = await _service.getTopic(topic);
+      if (topicResp.isSuccess && topicResp.data != null) {
+        final list = topicResp.data!.map(_mapApiPostToMessage).toList();
+        setState(() {
+          _messagesCache['topics'] = list;
+          _selectedTopic = topic;
+        });
+      }
+    } catch (_) {
+      // Тихо игнорируем, останемся на моках
+    }
+  }
+
+  Message _mapApiPostToMessage(ApiBrotherhoodPost p) {
+    return Message(
+      id: p.id,
+      author: p.author,
+      authorInitials: p.authorInitials,
+      time: _timeAgo(p.time),
+      text: p.text,
+      fireReactions: p.fireReactions,
+      thumbsUpReactions: p.thumbsUpReactions,
+      replies: p.replies
+          .map((r) => Reply(
+                author: r.author,
+                authorInitials: r.authorInitials,
+                time: _timeAgo(r.time),
+                text: r.text,
+              ))
+          .toList(),
+      userFire: p.userReactedFire,
+      userThumbs: p.userReactedThumbs,
+    );
+  }
+
+  String _timeAgo(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 1) return 'только что';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}м';
+    if (diff.inHours < 24) return '${diff.inHours}ч';
+    return '${diff.inDays}д';
   }
 
   @override
@@ -113,30 +200,74 @@ class _BrotherhoodPageState extends State<BrotherhoodPage> with TickerProviderSt
   }
 
   Widget _FeedTab() {
-    return _MessagesList(_getAllMessages());
+    return _MessagesList(_messagesCache['feed'] ?? _getAllMessages());
   }
 
   Widget _TopicsTab() {
-    return _MessagesList(_getTopicMessages());
+    final msgs = _messagesCache['topics'] ?? _getTopicMessages();
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: PRIMETheme.line, width: 0.5)),
+          ),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                ..._topics.map((t) {
+                  final selected = t == _selectedTopic;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      selected: selected,
+                      label: Text(
+                        t,
+                        style: TextStyle(
+                          color: selected ? PRIMETheme.sand : PRIMETheme.sandWeak,
+                          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                      backgroundColor: PRIMETheme.cardBg,
+                      selectedColor: PRIMETheme.primary.withOpacity(0.2),
+                      side: BorderSide(
+                        color: selected ? PRIMETheme.primary : PRIMETheme.line,
+                        width: selected ? 1.5 : 1,
+                      ),
+                      onSelected: (_) {
+                        _loadTopicFromApi(t);
+                      },
+                    ),
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
+        ),
+        Expanded(child: _MessagesList(msgs)),
+      ],
+    );
   }
 
   Widget _MyPostsTab() {
-    return _MessagesList(_getMyMessages());
+    return _MessagesList(_messagesCache['my'] ?? _getMyMessages());
   }
 
   Widget _MessagesList(List<Message> messages) {
     return RefreshIndicator(
       onRefresh: () async {
-        // Здесь можно добавить обновление данных
-        await Future.delayed(const Duration(seconds: 1));
+        await _loadFromApi();
+        await _loadTopicFromApi(_selectedTopic);
       },
       child: ListView.builder(
         controller: _scrollController,
         padding: const EdgeInsets.symmetric(vertical: 8),
         itemCount: messages.length,
         itemBuilder: (context, index) => _MessageThread(
-          message: messages[index], 
-          messageId: 'msg_$index',
+          message: messages[index],
+          messageId: messages[index].id ?? 'msg_$index',
         ),
       ),
     );
@@ -221,7 +352,7 @@ class _BrotherhoodPageState extends State<BrotherhoodPage> with TickerProviderSt
                 ),
                 const SizedBox(width: 16),
                 InkWell(
-                  onTap: () => _showCreatePostSheet(replyTo: message.author),
+                  onTap: () => _showCreatePostSheet(replyTo: message.author, postId: message.id),
                   borderRadius: BorderRadius.circular(8),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -465,8 +596,9 @@ class _BrotherhoodPageState extends State<BrotherhoodPage> with TickerProviderSt
     );
   }
 
-  void _showCreatePostSheet({String? replyTo}) {
+  void _showCreatePostSheet({String? replyTo, String? postId}) {
     final TextEditingController controller = TextEditingController();
+    String? selectedTopic = replyTo == null ? _selectedTopic : null; // тема только для нового поста
     
     showModalBottomSheet(
       context: context,
@@ -533,14 +665,62 @@ class _BrotherhoodPageState extends State<BrotherhoodPage> with TickerProviderSt
                     contentPadding: const EdgeInsets.all(16),
                   ),
                 ),
+                if (replyTo == null) ...[
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: selectedTopic,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      labelText: 'Тема (опционально)',
+                      labelStyle: const TextStyle(color: PRIMETheme.sandWeak),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: PRIMETheme.line),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: PRIMETheme.line),
+                      ),
+                      filled: true,
+                      fillColor: PRIMETheme.cardBg,
+                    ),
+                    items: [
+                      const DropdownMenuItem<String>(
+                        value: null,
+                        child: Text('Без темы'),
+                      ),
+                      ..._topics.map((t) => DropdownMenuItem<String>(
+                            value: t,
+                            child: Text(t),
+                          )),
+                    ],
+                    onChanged: (val) {
+                      setState(() {
+                        selectedTopic = val;
+                      });
+                    },
+                  ),
+                ],
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
                       if (controller.text.trim().isNotEmpty) {
+                        final text = controller.text.trim();
+                        if (_apiAvailable) {
+                          if (replyTo != null && postId != null) {
+                            await _service.replyToPost(postId, text);
+                          } else {
+                            await _service.createPost(text, topic: selectedTopic);
+                          }
+                          await _loadFromApi();
+                          if (replyTo == null && selectedTopic != null) {
+                            await _loadTopicFromApi(selectedTopic!);
+                          }
+                        }
                         _showSnackBar(replyTo != null ? 'Ответ отправлен' : 'Пост опубликован');
-                        Navigator.pop(context);
+                        if (context.mounted) Navigator.pop(context);
                       }
                     },
                     style: ElevatedButton.styleFrom(
@@ -573,13 +753,21 @@ class _BrotherhoodPageState extends State<BrotherhoodPage> with TickerProviderSt
     _showSnackBar('Детальный вид поста: ${message.author}');
   }
 
-  void _toggleReaction(String messageId, String reactionType) {
+  void _toggleReaction(String messageId, String reactionType) async {
     setState(() {
       _userReactions[messageId] ??= {};
-      _userReactions[messageId]![reactionType] = 
+      _userReactions[messageId]![reactionType] =
           !(_userReactions[messageId]![reactionType] ?? false);
     });
-    
+
+    // Не дергаем API для моковых id
+    final isMockId = messageId.startsWith('msg_');
+    if (_apiAvailable && !isMockId) {
+      final type = reactionType == 'fire' ? ApiReactionType.FIRE : ApiReactionType.THUMBS_UP;
+      await _service.toggleReaction(messageId, type);
+      await _loadFromApi();
+    }
+
     _showSnackBar('Реакция ${reactionType == 'fire' ? '🔥' : '👍'} ${_userReactions[messageId]![reactionType]! ? 'добавлена' : 'убрана'}');
   }
 
@@ -728,6 +916,7 @@ class _BrotherhoodPageState extends State<BrotherhoodPage> with TickerProviderSt
 }
 
 class Message {
+  final String? id;
   final String author;
   final String authorInitials;
   final String time;
@@ -735,8 +924,11 @@ class Message {
   final int fireReactions;
   final int thumbsUpReactions;
   final List<Reply> replies;
+  final bool userFire;
+  final bool userThumbs;
 
   Message({
+    this.id,
     required this.author,
     required this.authorInitials,
     required this.time,
@@ -744,6 +936,8 @@ class Message {
     required this.fireReactions,
     required this.thumbsUpReactions,
     required this.replies,
+    this.userFire = false,
+    this.userThumbs = false,
   });
 }
 

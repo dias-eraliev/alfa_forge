@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -78,7 +77,11 @@ class ApiClient {
     try {
       final uri = _buildUri(endpoint, queryParams);
       final response = await _client.get(uri, headers: _headers);
-      return _handleResponse<T>(response, fromJson);
+      return _handleResponse<T>(
+        response,
+        fromJson,
+        retryRequest: () => _client.get(uri, headers: _headers),
+      );
     } catch (e) {
       return ApiResponse.error('Ошибка сети: $e');
     }
@@ -97,7 +100,15 @@ class ApiClient {
         headers: _headers,
         body: body != null ? jsonEncode(body) : null,
       );
-      return _handleResponse<T>(response, fromJson);
+      return _handleResponse<T>(
+        response,
+        fromJson,
+        retryRequest: () => _client.post(
+          uri,
+          headers: _headers,
+          body: body != null ? jsonEncode(body) : null,
+        ),  
+      );
     } catch (e) {
       return ApiResponse.error('Ошибка сети: $e');
     }
@@ -116,7 +127,15 @@ class ApiClient {
         headers: _headers,
         body: body != null ? jsonEncode(body) : null,
       );
-      return _handleResponse<T>(response, fromJson);
+      return _handleResponse<T>(
+        response,
+        fromJson,
+        retryRequest: () => _client.put(
+          uri,
+          headers: _headers,
+          body: body != null ? jsonEncode(body) : null,
+        ),
+      );
     } catch (e) {
       return ApiResponse.error('Ошибка сети: $e');
     }
@@ -135,7 +154,15 @@ class ApiClient {
         headers: _headers,
         body: body != null ? jsonEncode(body) : null,
       );
-      return _handleResponse<T>(response, fromJson);
+      return _handleResponse<T>(
+        response,
+        fromJson,
+        retryRequest: () => _client.patch(
+          uri,
+          headers: _headers,
+          body: body != null ? jsonEncode(body) : null,
+        ),
+      );
     } catch (e) {
       return ApiResponse.error('Ошибка сети: $e');
     }
@@ -149,7 +176,11 @@ class ApiClient {
     try {
       final uri = _buildUri(endpoint);
       final response = await _client.delete(uri, headers: _headers);
-      return _handleResponse<T>(response, fromJson);
+      return _handleResponse<T>(
+        response,
+        fromJson,
+        retryRequest: () => _client.delete(uri, headers: _headers),
+      );
     } catch (e) {
       return ApiResponse.error('Ошибка сети: $e');
     }
@@ -167,37 +198,52 @@ class ApiClient {
   // Обработка ответа
   Future<ApiResponse<T>> _handleResponse<T>(
     http.Response response,
-    T Function(Map<String, dynamic>)? fromJson,
-  ) async {
+    T Function(Map<String, dynamic>)? fromJson, {
+    Future<http.Response> Function()? retryRequest,
+    bool didRetry = false,
+  }) async {
     final statusCode = response.statusCode;
     
     // Попытка обновить токен при ошибке 401
-    if (statusCode == 401 && _refreshToken != null) {
+  if (statusCode == 401 && _refreshToken != null && !didRetry) {
       final refreshed = await _refreshAccessToken();
-      if (refreshed) {
-        // Повторить запрос с новым токеном
-        // TODO: Реализовать повторный запрос
+      if (refreshed && retryRequest != null) {
+        final newResponse = await retryRequest();
+        // Повторно обработаем ответ, но без второго ретрая
+        return _handleResponse<T>(
+          newResponse,
+          fromJson,
+          retryRequest: null,
+          didRetry: true,
+        );
       }
     }
 
     try {
       print('🚀 API Response Status: $statusCode');
       print('🚀 API Response Body: ${response.body}');
-      
-      final jsonData = jsonDecode(response.body) as Map<String, dynamic>;
-      print('🚀 Parsed JSON: $jsonData');
-      
+
+      final decoded = jsonDecode(response.body);
+      print('🚀 Parsed JSON (dynamic): $decoded');
+
       if (statusCode >= 200 && statusCode < 300) {
         if (fromJson != null) {
-          print('🚀 Calling fromJson with: $jsonData');
-          final data = fromJson(jsonData);
+          // Если сервер вернул массив, оборачиваем его в Map под ключом 'data'
+          final Map<String, dynamic> normalized = decoded is Map<String, dynamic>
+              ? decoded
+              : <String, dynamic>{'data': decoded};
+          print('🚀 Calling fromJson with (normalized): $normalized');
+          final data = fromJson(normalized);
           print('🚀 fromJson result: $data');
           return ApiResponse.success(data);
         } else {
-          return ApiResponse.success(jsonData as T);
+          // Без кастомного парсинга возвращаем как есть
+          return ApiResponse.success(decoded as T);
         }
       } else {
-        final message = jsonData['message'] ?? 'Неизвестная ошибка';
+        final message = (decoded is Map<String, dynamic>)
+            ? (decoded['message'] ?? 'Неизвестная ошибка')
+            : 'Неизвестная ошибка';
         return ApiResponse.error(message);
       }
     } catch (e, stackTrace) {

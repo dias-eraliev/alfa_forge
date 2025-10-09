@@ -148,6 +148,30 @@ class ApiService {
     );
   }
 
+  Future<ApiResponse<List<ApiHealthMeasurement>>> getLatestHealthMeasurements() async {
+    return await _apiClient.get<List<ApiHealthMeasurement>>(
+      '/health/measurements/latest/all',
+      fromJson: (json) {
+        final List<dynamic> measurements = json['data'] ?? json;
+        return measurements.map((m) => ApiHealthMeasurement.fromJson(m)).toList();
+      },
+    );
+  }
+
+  Future<ApiResponse<List<ApiHealthMeasurement>>> getMeasurementHistory({
+    required String typeId,
+    int days = 30,
+  }) async {
+    return await _apiClient.get<List<ApiHealthMeasurement>>(
+      '/health/measurements/history/$typeId',
+      queryParams: { 'days': days.toString() },
+      fromJson: (json) {
+        final List<dynamic> measurements = json['data'] ?? json;
+        return measurements.map((m) => ApiHealthMeasurement.fromJson(m)).toList();
+      },
+    );
+  }
+
   Future<ApiResponse<ApiHealthMeasurement>> createHealthMeasurement(
     ApiHealthMeasurement measurement,
   ) async {
@@ -170,6 +194,90 @@ class ApiService {
       fromJson: (json) {
         final List<dynamic> types = json['data'] ?? json;
         return types.map((type) => ApiMeasurementType.fromJson(type)).toList();
+      },
+    );
+  }
+
+  Future<ApiResponse<List<ApiHealthGoal>>> getHealthGoals({
+    String? goalType,
+    String? priority,
+    String? frequency,
+    bool? isActive,
+  }) async {
+    final queryParams = <String, String>{};
+    if (goalType != null) queryParams['goalType'] = goalType;
+    if (priority != null) queryParams['priority'] = priority;
+    if (frequency != null) queryParams['frequency'] = frequency;
+    // Примечание: некоторые бекенды ожидают строгий boolean тип, а query string передает строку.
+    // Чтобы избежать 400, не будем передавать isActive как query — отфильтруем на клиенте ниже.
+
+    return await _apiClient.get<List<ApiHealthGoal>>(
+      '/health/goals',
+      queryParams: queryParams.isNotEmpty ? queryParams : null,
+      fromJson: (json) {
+        final List<dynamic> goals = json['data'] ?? json;
+        final list = goals.map((g) => ApiHealthGoal.fromJson(g)).toList();
+        if (isActive != null) {
+          return list.where((g) => g.isActive == isActive).toList();
+        }
+        return list;
+      },
+    );
+  }
+
+  Future<ApiResponse<ApiHealthGoal>> createHealthGoal(Map<String, dynamic> dto) async {
+    return await _apiClient.post<ApiHealthGoal>(
+      '/health/goals',
+      body: dto,
+      fromJson: (json) => ApiHealthGoal.fromJson(json),
+    );
+  }
+
+  Future<ApiResponse<ApiHealthGoal>> updateHealthGoal(String id, Map<String, dynamic> dto) async {
+    return await _apiClient.put<ApiHealthGoal>(
+      '/health/goals/$id',
+      body: dto,
+      fromJson: (json) => ApiHealthGoal.fromJson(json),
+    );
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> deleteHealthGoal(String id) async {
+    return await _apiClient.delete<Map<String, dynamic>>('/health/goals/$id');
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> updateHealthGoalProgress(String id, double currentValue) async {
+    return await _apiClient.put<Map<String, dynamic>>(
+      '/health/goals/$id/progress',
+      body: { 'currentValue': currentValue },
+    );
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> getHealthStats({
+    required DateTime startDate,
+    required DateTime endDate,
+    String? typeId,
+    String? goalType,
+  }) async {
+    final query = <String, String>{
+      'startDate': startDate.toIso8601String(),
+      'endDate': endDate.toIso8601String(),
+    };
+    if (typeId != null) query['typeId'] = typeId;
+    if (goalType != null) query['goalType'] = goalType;
+
+    return await _apiClient.get<Map<String, dynamic>>(
+      '/health/stats',
+      queryParams: query,
+      fromJson: (json) => json,
+    );
+  }
+
+  Future<ApiResponse<List<Map<String, dynamic>>>> getHealthAchievements() async {
+    return await _apiClient.get<List<Map<String, dynamic>>>(
+      '/health/achievements',
+      fromJson: (json) {
+        final List<dynamic> items = json['data'] ?? json;
+        return items.cast<Map<String, dynamic>>();
       },
     );
   }

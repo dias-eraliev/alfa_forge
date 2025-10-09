@@ -3,6 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/auth_service.dart';
 import '../models/api_models.dart';
 import '../api/api_client.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:onesignal_flutter/onesignal_flutter.dart';
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:js' as js;
 
 enum AuthState {
   initial,
@@ -74,7 +78,10 @@ class AuthProvider extends ChangeNotifier {
   Future<bool> register({
     required String email,
     required String password,
-    required String name,
+    required String username,
+    required String fullName,
+    String? phone,
+    String? city,
   }) async {
     _setLoading(true);
     
@@ -82,7 +89,10 @@ class AuthProvider extends ChangeNotifier {
       final registerDto = RegisterDto(
         email: email,
         password: password,
-        name: name,
+        username: username,
+        fullName: fullName,
+        phone: phone,
+        city: city,
       );
       
       final response = await _authService.register(registerDto);
@@ -91,6 +101,8 @@ class AuthProvider extends ChangeNotifier {
         await _authService.saveAuthTokens(response.data!);
         _user = response.data!.user;
         _setState(AuthState.authenticated);
+        // OneSignal External ID login
+        _oneSignalLogin();
         return true;
       } else {
         _setError(response.error ?? 'Ошибка регистрации');
@@ -123,6 +135,8 @@ class AuthProvider extends ChangeNotifier {
         await _authService.saveAuthTokens(response.data!);
         _user = response.data!.user;
         _setState(AuthState.authenticated);
+        // OneSignal External ID login
+        _oneSignalLogin();
         return true;
       } else {
         _setError(response.error ?? 'Неверные данные для входа');
@@ -141,6 +155,8 @@ class AuthProvider extends ChangeNotifier {
     _setLoading(true);
     
     try {
+      // OneSignal External ID logout
+      _oneSignalLogout();
       await _authService.signOut();
     } catch (e) {
       print('Ошибка при выходе: $e');
@@ -148,6 +164,53 @@ class AuthProvider extends ChangeNotifier {
       _user = null;
       _setState(AuthState.unauthenticated);
       _setLoading(false);
+    }
+  }
+
+  // --- OneSignal helpers ---
+  void _oneSignalLogin() {
+    try {
+      final uid = _user?.id;
+      if (uid == null || uid.isEmpty) return;
+      if (kIsWeb) {
+        try {
+          js.context.callMethod('eval', [
+            'if (window.OneSignalBridge && window.OneSignalBridge.login) { window.OneSignalBridge.login("' + uid + '"); }'
+          ]);
+        } catch (e) {
+          debugPrint('OneSignal web login error: $e');
+        }
+      } else {
+        try {
+          OneSignal.login(uid);
+        } catch (e) {
+          debugPrint('OneSignal mobile login error: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('OneSignal login helper error: $e');
+    }
+  }
+
+  void _oneSignalLogout() {
+    try {
+      if (kIsWeb) {
+        try {
+          js.context.callMethod('eval', [
+            'if (window.OneSignalBridge && window.OneSignalBridge.logout) { window.OneSignalBridge.logout(); }'
+          ]);
+        } catch (e) {
+          debugPrint('OneSignal web logout error: $e');
+        }
+      } else {
+        try {
+          OneSignal.logout();
+        } catch (e) {
+          debugPrint('OneSignal mobile logout error: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('OneSignal logout helper error: $e');
     }
   }
 

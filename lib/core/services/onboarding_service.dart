@@ -5,7 +5,8 @@ class OnboardingService {
   final ApiClient _apiClient = ApiClient.instance;
 
   // Обновить профиль пользователя
-  Future<ApiResponse<ApiUser>> updateProfile({
+  // Backend returns UserProfile object here, not full User
+  Future<ApiResponse<ApiUserProfile>> updateProfile({
     String? fullName,
     String? phone,
     String? city,
@@ -22,10 +23,10 @@ class OnboardingService {
     if (gender != null) body['gender'] = gender;
     if (avatarUrl != null) body['avatarUrl'] = avatarUrl;
 
-    return await _apiClient.put<ApiUser>(
+    return await _apiClient.put<ApiUserProfile>(
       '/users/profile',
       body: body,
-      fromJson: (json) => ApiUser.fromJson(json),
+      fromJson: (json) => ApiUserProfile.fromJson(json),
     );
   }
 

@@ -15,6 +15,7 @@ import {
   NotificationStatsDto,
   QuoteCategory
 } from './dto/notifications.dto';
+import { Post as HttpPost } from '@nestjs/common';
 
 @ApiTags('notifications')
 @Controller('notifications')
@@ -160,5 +161,38 @@ export class NotificationsController {
   @Post('send')
   async sendNotification(@Body() sendNotificationDto: SendNotificationDto) {
     return this.notificationsService.sendNotification(sendNotificationDto);
+  }
+
+  // ========== TEST (E2E) ==========
+  @ApiOperation({ summary: 'Тестовая отправка уведомления текущему пользователю' })
+  @ApiResponse({ status: 200, description: 'Результат тестовой отправки' })
+  @Post('test')
+  async sendTest(@Request() req: any) {
+    const payload: SendNotificationDto = {
+      userIds: req.user.id,
+      notification: {
+        title: 'Test push',
+        message: 'Hello from OneSignal!',
+        type: undefined as any, // тип сейчас не используется при отправке
+      } as any,
+      immediate: true,
+    };
+    return this.notificationsService.sendNotification(payload);
+  }
+
+  // ========== DEVICE TOKEN REGISTRATION (OneSignal) ==========
+
+  @ApiOperation({ summary: 'Зарегистрировать OneSignal playerId устройства' })
+  @ApiResponse({ status: 200, description: 'Токен зарегистрирован' })
+  @HttpPost('device/register')
+  async registerDevice(@Request() req: any, @Body() body: { playerId: string; platform: string }) {
+    return this.notificationsService.registerDevice(req.user.id, body.playerId, body.platform);
+  }
+
+  @ApiOperation({ summary: 'Отвязать OneSignal playerId устройства' })
+  @ApiResponse({ status: 200, description: 'Токен удалён' })
+  @HttpPost('device/unregister')
+  async unregisterDevice(@Request() req: any, @Body() body: { playerId: string }) {
+    return this.notificationsService.unregisterDevice(req.user.id, body.playerId);
   }
 }

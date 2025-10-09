@@ -1,4 +1,5 @@
 import '../../../core/models/api_models.dart';
+import '../../../core/services/api_service.dart';
 import '../models/habit_model.dart';
 import 'package:flutter/material.dart';
 
@@ -9,8 +10,10 @@ class HabitConverter {
       'id': apiHabit.id,
       'name': apiHabit.name,
       'icon': _getIconFromCategory(apiHabit.category),
-      'frequency': apiHabit.frequency,
-      'description': apiHabit.description ?? 'API привычка',
+      // Локализованный лейбл частоты для UI
+      'frequency': _ruFrequency(apiHabit.frequency),
+      // Не показываем плейсхолдеры: если описания нет — оставляем пустую строку
+      'description': apiHabit.description ?? '',
       'streak': _calculateStreak(apiHabit.completions),
       'maxStreak': _calculateMaxStreak(apiHabit.completions),
       'strength': _calculateStrength(apiHabit.completions),
@@ -21,6 +24,22 @@ class HabitConverter {
   // Конвертация списка ApiHabit в список Map
   static List<Map<String, dynamic>> apiHabitsToMaps(List<ApiHabit> apiHabits) {
     return apiHabits.map((habit) => apiHabitToMap(habit)).toList();
+  }
+
+  // Преобразование частоты из API (DAILY/WEEKLY/MONTHLY/CUSTOM) в человеко-понятный русский текст
+  static String _ruFrequency(String code) {
+    switch (code.toUpperCase()) {
+      case 'DAILY':
+        return 'Ежедневно';
+      case 'WEEKLY':
+        return 'Еженедельно';
+      case 'MONTHLY':
+        return 'Ежемесячно';
+      case 'CUSTOM':
+        return 'По расписанию';
+      default:
+        return code; // фолбэк на случай неизвестного значения
+    }
   }
 
   // Получить иконку по категории
@@ -161,15 +180,77 @@ class HabitConverter {
   }
 
   // Конвертация HabitModel в CreateHabitDto для API
-  static CreateHabitDto habitModelToCreateDto(HabitModel habit) {
+  static CreateHabitDto habitModelToCreateDto(HabitModel habit, {String? categoryIdOverride}) {
+    // Переводим локальные enum'ы в строки бэкенда
+    String mapFrequencyType(HabitFrequencyType t) {
+      switch (t) {
+        case HabitFrequencyType.daily:
+          return 'DAILY';
+        case HabitFrequencyType.weekly:
+          return 'WEEKLY';
+        case HabitFrequencyType.monthly:
+          return 'MONTHLY';
+        case HabitFrequencyType.custom:
+          return 'CUSTOM';
+      }
+    }
+
+    String mapDifficulty(HabitDifficulty d) {
+      switch (d) {
+        case HabitDifficulty.easy:
+          return 'EASY';
+        case HabitDifficulty.medium:
+          return 'MEDIUM';
+        case HabitDifficulty.hard:
+          return 'HARD';
+      }
+    }
+
+    String mapProgression(HabitProgressionType p) {
+      switch (p) {
+        case HabitProgressionType.standard:
+          return 'STANDARD';
+        case HabitProgressionType.incremental:
+          return 'INCREMENTAL';
+        case HabitProgressionType.target:
+          return 'TARGET';
+      }
+    }
+
+    // Простейшее соответствие категории в id: пока используем строковое имя как id
+    // Позже можно заменить на реальный выбор из /habits/categories/list
+    final categoryId = categoryIdOverride ?? _getCategoryFromIcon(habit.icon);
+
+    // Цвет -> #RRGGBB
+    final hex = habit.color.value.toRadixString(16).padLeft(8, '0');
+    final colorHex = '#${hex.substring(2)}';
+
+    // Время
+    final reminderTime = habit.reminderTime != null
+        ? '${habit.reminderTime!.hour.toString().padLeft(2, '0')}:${habit.reminderTime!.minute.toString().padLeft(2, '0')}'
+        : null;
+
     return CreateHabitDto(
       name: habit.name,
       description: habit.description.isNotEmpty ? habit.description : null,
-      category: _getCategoryFromIcon(habit.icon),
-      frequency: habit.frequency.displayText,
-      targetCount: 1, // По умолчанию 1 раз в день
+      motivation: habit.motivation.isNotEmpty ? habit.motivation : null,
       iconName: habit.icon.codePoint.toString(),
-      color: '#${habit.color.value.toRadixString(16).substring(2)}',
+      iconFamily: habit.icon.fontFamily,
+      colorHex: colorHex,
+      categoryId: categoryId,
+      templateId: null,
+      frequencyType: mapFrequencyType(habit.frequency.type),
+      timesPerWeek: habit.frequency.type == HabitFrequencyType.weekly ? (habit.frequency.timesPerWeek ?? habit.weekdays.length) : null,
+      timesPerMonth: habit.frequency.type == HabitFrequencyType.monthly ? habit.frequency.timesPerMonth : null,
+      specificWeekdays: habit.frequency.type == HabitFrequencyType.weekly ? (habit.frequency.specificDays ?? habit.weekdays) : null,
+      reminderTime: reminderTime,
+      duration: habit.duration,
+      difficulty: mapDifficulty(habit.difficulty),
+      enableReminders: habit.enableReminders,
+      linkedGoal: habit.linkedGoal,
+      tags: habit.tags.isNotEmpty ? habit.tags : null,
+      motivationalMessages: habit.motivationalMessages.isNotEmpty ? habit.motivationalMessages : null,
+      progressionType: mapProgression(habit.progressionType),
     );
   }
 
@@ -284,9 +365,15 @@ class HabitConverter {
     bool completed,
   ) async {
     try {
-      // Здесь будет вызов API для создания/удаления completion
-      // Пока возвращаем true как заглушку
-      return true;
+      final api = ApiService.instance;
+      await api.initialize();
+      if (completed) {
+        final res = await api.habits.completeHabit(habitId, date: date);
+        return res.isSuccess;
+      } else {
+        final res = await api.habits.uncompleteHabit(habitId, date);
+        return res.isSuccess;
+      }
     } catch (e) {
       print('Ошибка отметки привычки: $e');
       return false;

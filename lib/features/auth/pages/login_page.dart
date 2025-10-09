@@ -15,10 +15,11 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _nameController = TextEditingController();
+  // Для новой логики: на логин-экране только вход (регистрация через онбординг)
   
   bool _isPasswordVisible = false;
-  bool _isLoginMode = true;
+  // Режим регистрации убран; всегда режим входа
+  final bool _isLoginMode = true;
   
   late AnimationController _slideController;
   late AnimationController _fadeController;
@@ -59,7 +60,6 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     _fadeController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
-    _nameController.dispose();
     super.dispose();
   }
 
@@ -187,25 +187,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       key: _formKey,
       child: Column(
         children: [
-          // Имя (только при регистрации)
-          if (!_isLoginMode) ...[
-            _buildTextField(
-              controller: _nameController,
-              label: 'Имя',
-              hint: 'Введите ваше имя',
-              icon: Icons.person_outline,
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Введите имя';
-                }
-                if (value.length < 2) {
-                  return 'Имя должно содержать минимум 2 символа';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 20),
-          ],
+          // Поля username/fullName убраны: регистрация перенесена в онбординг
           
           // Email
           _buildTextField(
@@ -352,9 +334,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                 Text(
                   authProvider.isLoading
                     ? 'Загрузка...'
-                    : _isLoginMode 
-                      ? 'Войти'
-                      : 'Зарегистрироваться',
+                    : 'Войти',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 18,
@@ -370,40 +350,23 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   }
 
   Widget _buildModeToggle() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          _isLoginMode 
-            ? 'Нет аккаунта? '
-            : 'Уже есть аккаунт? ',
+    // Вместо переключения режима показываем ссылку "Пройти онбординг"
+    return GestureDetector(
+      onTap: () {
+        // очистка ошибок
+        context.read<AuthProvider>().clearError();
+        // переход к онбордингу
+        context.go('/onboarding/profile');
+      },
+      child: Center(
+        child: Text(
+          'Нет аккаунта? Пройдите онбординг',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: PRIMETheme.sandWeak,
-          ),
+                color: PRIMETheme.primary,
+                fontWeight: FontWeight.bold,
+              ),
         ),
-        GestureDetector(
-          onTap: () {
-            setState(() {
-              _isLoginMode = !_isLoginMode;
-            });
-            // Очищаем форму при переключении
-            _formKey.currentState?.reset();
-            _emailController.clear();
-            _passwordController.clear();
-            _nameController.clear();
-            
-            // Очищаем ошибки
-            context.read<AuthProvider>().clearError();
-          },
-          child: Text(
-            _isLoginMode ? 'Зарегистрируйтесь' : 'Войдите',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: PRIMETheme.primary,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -480,18 +443,10 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     final authProvider = context.read<AuthProvider>();
     bool success;
 
-    if (_isLoginMode) {
-      success = await authProvider.login(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-      );
-    } else {
-      success = await authProvider.register(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-        name: _nameController.text.trim(),
-      );
-    }
+    success = await authProvider.login(
+      email: _emailController.text.trim(),
+      password: _passwordController.text,
+    );
 
     if (success && mounted) {
       // Переходим к главному экрану с GoRouter

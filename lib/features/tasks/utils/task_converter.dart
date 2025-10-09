@@ -70,15 +70,29 @@ class TaskConverter {
 
   // Конвертация статуса UI в API
   static String convertStatusToApi(String uiStatus) {
+    // Backend expects uppercase enums: ASSIGNED, IN_PROGRESS, DONE
     switch (uiStatus.toLowerCase()) {
       case 'assigned':
-        return 'pending';
+        return 'ASSIGNED';
       case 'in_progress':
-        return 'in_progress';
+        return 'IN_PROGRESS';
       case 'done':
-        return 'completed';
+        return 'DONE';
       default:
-        return 'pending';
+        return 'ASSIGNED';
+    }
+  }
+
+  // Конвертация приоритета UI в backend enum (HIGH/MEDIUM/LOW)
+  static String uiPriorityToEnum(String uiPriority) {
+    switch (uiPriority.toLowerCase()) {
+      case 'high':
+        return 'HIGH';
+      case 'medium':
+        return 'MEDIUM';
+      case 'low':
+      default:
+        return 'LOW';
     }
   }
 
@@ -165,13 +179,39 @@ class TaskConverter {
     required String priority,
     DateTime? dueDate,
     String? category,
+    String? habitId,
+    String? habitName,
+    DateTime? reminderAt,
+    bool? isRecurring,
+    String? recurringType,
+    List<String>? subtasks,
+    List<String>? tags,
   }) {
+    // Backend: priority must be one of HIGH/MEDIUM/LOW; deadline must be ISO; category is not allowed
+    String toBackendPriority(String p) {
+      switch (p.toLowerCase()) {
+        case 'high':
+          return 'HIGH';
+        case 'medium':
+          return 'MEDIUM';
+        case 'low':
+        default:
+          return 'LOW';
+      }
+    }
+
     return CreateTaskDto(
       title: title,
       description: description,
-      priority: convertPriorityToApi(priority),
-      dueDate: dueDate,
-      category: category,
+      priority: toBackendPriority(priority),
+      deadline: dueDate,
+      habitId: habitId,
+      habitName: habitName,
+      reminderAt: reminderAt,
+      isRecurring: isRecurring,
+      recurringType: recurringType,
+      subtasks: subtasks,
+      tags: tags,
     );
   }
 }

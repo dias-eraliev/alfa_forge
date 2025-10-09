@@ -5,6 +5,7 @@ import '../models/habit_model.dart';
 import '../models/development_sphere_model.dart';
 import '../../../core/services/onboarding_service.dart';
 import '../../../core/services/auth_service.dart';
+import '../../../core/models/api_models.dart';
 
 class OnboardingController extends ChangeNotifier {
   static const String _keyOnboardingData = 'onboarding_data';
@@ -87,7 +88,9 @@ class OnboardingController extends ChangeNotifier {
   
   bool get areHabitsValid => _data.selectedHabits.isNotEmpty;
   
-  bool get canComplete => isProfileValid && isUsernameValid && areHabitsValid;
+  bool get isPasswordValid => _data.password != null && _data.password!.trim().length >= 6;
+  
+  bool get canComplete => isProfileValid && isUsernameValid && isPasswordValid && areHabitsValid;
 
   // Методы для сохранения профильных данных
   void setProfileData({
@@ -107,6 +110,11 @@ class OnboardingController extends ChangeNotifier {
 
   void setUsername(String username) {
     _data = _data.copyWith(username: username.trim());
+    notifyListeners();
+  }
+
+  void setPassword(String password) {
+    _data = _data.copyWith(password: password);
     notifyListeners();
   }
 
@@ -179,23 +187,58 @@ class OnboardingController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Сначала обновляем профиль на backend
       final onboardingService = OnboardingService();
-      
-      // Обновляем профиль пользователя
-      final profileResponse = await onboardingService.updateProfile(
-        fullName: _data.fullName,
-        phone: _data.phone,
-        city: _data.city,
-      );
-      
-      if (!profileResponse.isSuccess) {
-        throw Exception('Failed to update profile: ${profileResponse.error}');
+      final authService = AuthService();
+
+      // 1) Регистрируем пользователя (если не авторизованы)
+      if (!authService.isAuthenticated) {
+        final registerDto = RegisterDto(
+          email: _data.email!,
+          password: _data.password!,
+          username: _data.username!,
+          fullName: _data.fullName!,
+          phone: _data.phone,
+          city: _data.city,
+        );
+
+        final registerResp = await authService.register(registerDto);
+        if (!registerResp.isSuccess || registerResp.data == null) {
+          throw Exception(registerResp.error ?? 'Registration failed');
+        }
+        await authService.saveAuthTokens(registerResp.data!);
       }
-      
-      // Завершаем онбординг на backend
+
+      // 2) Обновляем профиль пользователя (не критично для завершения)
+      try {
+        final profileResponse = await onboardingService.updateProfile(
+          fullName: _data.fullName,
+          phone: _data.phone,
+          city: _data.city,
+        );
+        if (!profileResponse.isSuccess) {
+          debugPrint('⚠️ Failed to update profile: ${profileResponse.error}');
+        }
+      } catch (e) {
+        debugPrint('⚠️ Exception while updating profile: $e');
+      }
+
+      // 3) Сохраняем выбранные привычки
+      if (_data.selectedHabits.isNotEmpty) {
+        try {
+          final habitIds = _data.selectedHabits.map((h) => h.id).toList();
+          final habitsResp = await onboardingService.updateSelectedHabits(
+            habitIds: habitIds,
+          );
+          if (!habitsResp.isSuccess) {
+            debugPrint('⚠️ Failed to save selected habits: ${habitsResp.error}');
+          }
+        } catch (e) {
+          debugPrint('⚠️ Exception while saving habits: $e');
+        }
+      }
+
+      // 4) Завершаем онбординг на backend
       final completeResponse = await onboardingService.completeOnboarding();
-      
       if (!completeResponse.isSuccess) {
         throw Exception('Failed to complete onboarding: ${completeResponse.error}');
       }
@@ -289,37 +332,42 @@ class OnboardingController extends ChangeNotifier {
   // Статический метод для проверки завершения онбординга
   static Future<bool> isOnboardingCompleted() async {
     try {
-      // Если пользователь авторизован, проверяем статус на backend
+      // 1) Быстрый путь: если локально отмечено завершение — сразу возвращаем true
+      final prefs = await SharedPreferences.getInstance();
+      final localStatus = prefs.getBool(_keyOnboardingCompleted) ??
+          prefs.getBool('onboarding_completed') ??
+          false;
+      if (localStatus) {
+        debugPrint('📋 Local onboarding status (short-circuit): true');
+        return true;
+      }
+
+      // 2) Если локально нет завершения и пользователь авторизован — проверяем backend
       final authService = AuthService();
       if (authService.isAuthenticated) {
         try {
           final onboardingService = OnboardingService();
           final response = await onboardingService.getCurrentProfile();
-          
+
           if (response.isSuccess && response.data != null) {
             final user = response.data!;
-            final isCompleted = user.profile?.onboardingCompleted ?? false;
-            
+            final isCompleted = user.profile.onboardingCompleted;
+
             // Синхронизируем с локальным хранилищем
-            final prefs = await SharedPreferences.getInstance();
             await prefs.setBool(_keyOnboardingCompleted, isCompleted);
             await prefs.setBool('onboarding_completed', isCompleted);
-            
+
             debugPrint('📋 Backend onboarding status: $isCompleted');
             return isCompleted;
           }
         } catch (e) {
           debugPrint('⚠️ Failed to check backend onboarding status: $e');
-          // Fallback к локальному хранилищу при ошибке API
+          // Падаем в локальный статус ниже
         }
       }
-      
-      // Fallback: проверяем локальное хранилище
-      final prefs = await SharedPreferences.getInstance();
-      final localStatus = prefs.getBool(_keyOnboardingCompleted) ?? 
-                         prefs.getBool('onboarding_completed') ?? 
-                         false;
-      debugPrint('📋 Local onboarding status: $localStatus');
+
+      // 3) Возвращаем локальный статус как fallback
+      debugPrint('📋 Local onboarding status (fallback): $localStatus');
       return localStatus;
       
     } catch (e) {

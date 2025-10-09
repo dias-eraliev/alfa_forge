@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import '../shared/bottom_nav_scaffold.dart';
 import '../../app/theme.dart';
-import 'models/task_model.dart';
 import 'widgets/advanced_add_task_dialog.dart';
 import '../../core/services/api_service.dart';
-import '../../core/models/api_models.dart';
+import '../../core/services/tasks_service.dart';
 import 'utils/task_converter.dart';
 
 class TasksPage extends StatefulWidget {
@@ -27,83 +26,15 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
   bool _isLoading = true;
   bool _isApiConnected = false;
   String? _errorMessage;
+  Map<String, dynamic>? priorityTask;
   
   // Состояние задач с расширенными данными
   List<Map<String, dynamic>> todayTasks = [];
+  Map<int, List<Map<String, dynamic>>> weekTasks = {
+    1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [],
+  };
   
-  // Fallback данные
-  List<Map<String, dynamic>> _fallbackTasks = [
-    {
-      'text': 'Купить продукты на неделю', 
-      'done': false, 
-      'habit': null, 
-      'id': '1',
-      'description': 'Купить все необходимые продукты для семьи на предстоящую неделю. Не забыть про овощи, фрукты и молочные продукты.',
-      'deadline': DateTime.now().add(const Duration(days: 2)),
-      'priority': 'medium',
-      'status': 'assigned'
-    },
-    {
-      'text': 'Позвонить клиенту по проекту', 
-      'done': true, 
-      'habit': null, 
-      'id': '2',
-      'description': 'Обсудить детали проекта Alpha Corp и согласовать следующие этапы работы.',
-      'deadline': DateTime.now().subtract(const Duration(days: 1)),
-      'priority': 'high',
-      'status': 'done'
-    },
-    {
-      'text': 'Тренировка 20 минут', 
-      'done': false, 
-      'habit': 'Бег', 
-      'id': '3',
-      'description': 'Кардио тренировка в спортзале или пробежка в парке. Поддержание физической формы.',
-      'deadline': DateTime.now(),
-      'priority': 'low',
-      'status': 'assigned'
-    },
-    {
-      'text': 'Прочитать 10 страниц книги', 
-      'done': false, 
-      'habit': 'Чтение', 
-      'id': '4',
-      'description': 'Продолжить чтение книги "Чистый код" Роберта Мартина. Развитие профессиональных навыков.',
-      'deadline': DateTime.now().add(const Duration(days: 1)),
-      'priority': 'medium',
-      'status': 'in_progress'
-    },
-    {
-      'text': 'Обновить резюме', 
-      'done': false, 
-      'habit': null, 
-      'id': '5',
-      'description': 'Добавить новые навыки и последние проекты в резюме. Подготовиться к новым возможностям.',
-      'deadline': DateTime.now().add(const Duration(days: 7)),
-      'priority': 'low',
-      'status': 'assigned'
-    },
-    {
-      'text': 'Подготовить отчет', 
-      'done': true, 
-      'habit': null, 
-      'id': '6',
-      'description': 'Составить детальный отчет о проделанной работе за месяц для руководства.',
-      'deadline': DateTime.now().subtract(const Duration(hours: 2)),
-      'priority': 'high',
-      'status': 'done'
-    },
-    {
-      'text': 'Медитация 5 минут', 
-      'done': true, 
-      'habit': 'Медитация', 
-      'id': '7',
-      'description': 'Утренняя медитация для снятия стресса и улучшения концентрации.',
-      'deadline': DateTime.now(),
-      'priority': 'medium',
-      'status': 'done'
-    },
-  ];
+  // Fallback данные держим в конвертере TaskConverter.getFallbackTasks()
 
   @override
   void initState() {
@@ -130,6 +61,7 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
         // Успешно получили данные из API
         setState(() {
           todayTasks = TaskConverter.apiTasksToMaps(response.data!);
+          priorityTask = _selectPriorityTask(todayTasks);
           _isApiConnected = true;
           _isLoading = false;
         });
@@ -147,6 +79,7 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
   void _handleApiError(String error) {
     setState(() {
       todayTasks = TaskConverter.getFallbackTasks();
+      priorityTask = _selectPriorityTask(todayTasks);
       _isApiConnected = false;
       _errorMessage = error;
       _isLoading = false;
@@ -172,9 +105,43 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
     }
   }
 
+  // Выбор приоритетной задачи: high > medium > low, затем ближайший дедлайн
+  Map<String, dynamic>? _selectPriorityTask(List<Map<String, dynamic>> tasks) {
+    final notDone = tasks.where((t) => (t['done'] as bool?) != true).toList();
+    if (notDone.isEmpty) return null;
+
+    int prioScore(String? p) {
+      switch (p) {
+        case 'high':
+          return 3;
+        case 'medium':
+          return 2;
+        case 'low':
+          return 1;
+        default:
+          return 0;
+      }
+    }
+
+    notDone.sort((a, b) {
+      final ap = prioScore(a['priority'] as String?);
+      final bp = prioScore(b['priority'] as String?);
+      if (ap != bp) return bp.compareTo(ap); // по убыванию приоритета
+      final ad = (a['deadline'] as DateTime?) ?? DateTime.now().add(const Duration(days: 3650));
+      final bd = (b['deadline'] as DateTime?) ?? DateTime.now().add(const Duration(days: 3650));
+      return ad.compareTo(bd); // ближайший раньше
+    });
+
+    return notDone.first;
+  }
+
   // Обновление задач (pull-to-refresh)
   Future<void> _refreshTasks() async {
-    await _loadTasksFromApi();
+    if (isWeekMode) {
+      await _loadWeekTasksFromApi();
+    } else {
+      await _loadTasksFromApi();
+    }
   }
 
   @override
@@ -229,13 +196,131 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
     );
   }
 
-  void _toggleTask(String taskId) {
+  Future<void> _toggleTask(String taskId) async {
+    // Пытаемся найти задачу в сегодняшнем списке
+    var idx = todayTasks.indexWhere((t) => t['id'] == taskId);
+    bool isWeekItem = false;
+    int? weekDayKey;
+
+    // Если не нашли — ищем в недельном списке
+    if (idx == -1) {
+      for (final entry in weekTasks.entries) {
+        final j = entry.value.indexWhere((t) => t['id'] == taskId);
+        if (j != -1) {
+          isWeekItem = true;
+          weekDayKey = entry.key;
+          idx = j;
+          break;
+        }
+      }
+      if (!isWeekItem) return; // не нашли ни там, ни там
+    }
+
+    Map<String, dynamic> prev;
+    bool newDone;
+    if (isWeekItem) {
+      final int key = weekDayKey!;
+      final list = weekTasks[key]!;
+      prev = Map<String, dynamic>.from(list[idx]);
+      newDone = !((list[idx]['done']) as bool? ?? false);
+    } else {
+      prev = Map<String, dynamic>.from(todayTasks[idx]);
+      newDone = !((todayTasks[idx]['done']) as bool? ?? false);
+    }
+
+    // Оптимистичное обновление UI
     setState(() {
-      final taskIndex = todayTasks.indexWhere((task) => task['id'] == taskId);
-      if (taskIndex != -1) {
-        todayTasks[taskIndex]['done'] = !todayTasks[taskIndex]['done'];
+      if (isWeekItem) {
+        final int key = weekDayKey!;
+        final list = weekTasks[key]!;
+        list[idx]['done'] = newDone;
+        list[idx]['status'] = newDone ? 'done' : 'assigned';
+        weekTasks[key] = list;
+      } else {
+        todayTasks[idx]['done'] = newDone;
+        todayTasks[idx]['status'] = newDone ? 'done' : 'assigned';
+        priorityTask = _selectPriorityTask(todayTasks);
       }
     });
+
+    if (!_isApiConnected) return; // офлайн режим — оставляем локально
+
+    try {
+      if (newDone) {
+        final res = await _apiService.tasks.completeTask(taskId);
+        if (res.isSuccess && res.data != null) {
+          final updated = TaskConverter.apiTaskToMap(res.data!);
+          setState(() {
+            if (isWeekItem) {
+              final int key = weekDayKey!;
+              final list = weekTasks[key]!;
+              list[idx] = updated;
+              weekTasks[key] = list;
+            } else {
+              todayTasks[idx] = updated;
+              priorityTask = _selectPriorityTask(todayTasks);
+            }
+          });
+          // Ревалидация после успешного ответа
+          _revalidateTasksSilent();
+        } else {
+          throw Exception(res.error ?? 'Не удалось отметить задачу выполненной');
+        }
+      } else {
+        // Бэк требует обязательные title/priority/deadline при PUT, поэтому отправляем полный DTO
+        final String title = prev['text'] as String? ?? '';
+        final String apiPriority = TaskConverter.uiPriorityToEnum(prev['priority'] as String? ?? 'medium');
+        final DateTime deadline = (prev['deadline'] as DateTime? ?? DateTime.now());
+        final res = await _apiService.tasks.updateTask(
+          taskId,
+          UpdateTaskDto(
+            title: title,
+            priority: apiPriority,
+            deadline: deadline,
+            status: TaskConverter.convertStatusToApi('assigned'),
+          ),
+        );
+        if (res.isSuccess && res.data != null) {
+          final updated = TaskConverter.apiTaskToMap(res.data!);
+          setState(() {
+            if (isWeekItem) {
+              final int key = weekDayKey!;
+              final list = weekTasks[key]!;
+              list[idx] = updated;
+              weekTasks[key] = list;
+            } else {
+              todayTasks[idx] = updated;
+              priorityTask = _selectPriorityTask(todayTasks);
+            }
+          });
+          // Ревалидация после успешного ответа
+          _revalidateTasksSilent();
+        } else {
+          throw Exception(res.error ?? 'Не удалось обновить статус задачи');
+        }
+      }
+    } catch (e) {
+      // Откатываем
+      setState(() {
+        if (isWeekItem) {
+          final int key = weekDayKey!;
+          final list = weekTasks[key]!;
+          list[idx] = prev;
+          weekTasks[key] = list;
+        } else {
+          todayTasks[idx] = prev;
+          priorityTask = _selectPriorityTask(todayTasks);
+        }
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка: $e'),
+            backgroundColor: PRIMETheme.warn,
+          ),
+        );
+      }
+    }
   }
 
   void _addNewTask() {
@@ -243,9 +328,57 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
       context: context,
       builder: (context) => AdvancedAddTaskDialog(
         onTaskAdded: (task) {
-          setState(() {
-            todayTasks.add(task.toMap());
-          });
+          // Если есть соединение с API — создаем задачу на бэке
+          if (_isApiConnected) {
+            () async {
+              try {
+                final dto = TaskConverter.createTaskDtoFromUI(
+                  title: task.title,
+                  description: task.description.isEmpty ? null : task.description,
+                  priority: task.priority.name,
+                  dueDate: task.deadline,
+                  category: null,
+                  habitId: task.habitId,
+                  habitName: task.habitName,
+                  reminderAt: task.reminderAt,
+                  isRecurring: task.isRecurring ? true : null,
+                  recurringType: task.recurringType != null ? task.recurringType!.name.toUpperCase() : null,
+                  subtasks: task.subtasks.isNotEmpty ? task.subtasks : null,
+                  tags: task.tags.isNotEmpty ? task.tags : null,
+                );
+                final res = await _apiService.tasks.createTask(dto);
+                if (res.isSuccess && res.data != null) {
+                  final created = TaskConverter.apiTaskToMap(res.data!);
+                  setState(() {
+                    todayTasks.add(created);
+                    priorityTask = _selectPriorityTask(todayTasks);
+                  });
+                } else {
+                  throw Exception(res.error ?? 'Не удалось создать задачу');
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Ошибка создания задачи: $e'),
+                      backgroundColor: PRIMETheme.warn,
+                    ),
+                  );
+                }
+                // Фолбэк: добавим локально
+                setState(() {
+                  todayTasks.add(task.toMap());
+                  priorityTask = _selectPriorityTask(todayTasks);
+                });
+              }
+            }();
+          } else {
+            // офлайн — сохраняем локально
+            setState(() {
+              todayTasks.add(task.toMap());
+              priorityTask = _selectPriorityTask(todayTasks);
+            });
+          }
         },
       ),
     );
@@ -256,15 +389,8 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
       context: context,
       builder: (context) => _TaskDetailDialog(
         task: task,
-        onStatusChanged: (taskId, newStatus) {
-          setState(() {
-            final taskIndex = todayTasks.indexWhere((t) => t['id'] == taskId);
-            if (taskIndex != -1) {
-              todayTasks[taskIndex]['status'] = newStatus;
-              // Обновляем состояние done в зависимости от статуса
-              todayTasks[taskIndex]['done'] = newStatus == 'done';
-            }
-          });
+        onStatusChanged: (taskId, newStatus) async {
+          await _changeTaskStatus(taskId, newStatus);
         },
       ),
     );
@@ -272,18 +398,135 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
 
   // Получение задач по статусу
   List<Map<String, dynamic>> _getTasksByStatus(String status) {
-    return todayTasks.where((task) => task['status'] == status).toList();
+    // В режиме недели учитываем все задачи недели, иначе только сегодняшние
+    final Iterable<Map<String, dynamic>> source = isWeekMode
+        ? weekTasks.values.expand((list) => list)
+        : todayTasks;
+    return source.where((task) => task['status'] == status).toList();
   }
 
   // Обновление статуса задачи из Kanban
-  void _updateTaskStatus(String taskId, String newStatus) {
+  Future<void> _changeTaskStatus(String taskId, String newStatus) async {
+    var idx = todayTasks.indexWhere((t) => t['id'] == taskId);
+    bool isWeekItem = false;
+    int? weekDayKey;
+
+    if (idx == -1) {
+      for (final entry in weekTasks.entries) {
+        final j = entry.value.indexWhere((t) => t['id'] == taskId);
+        if (j != -1) {
+          isWeekItem = true;
+          weekDayKey = entry.key;
+          idx = j;
+          break;
+        }
+      }
+      if (!isWeekItem) return;
+    }
+
+    Map<String, dynamic> prev;
+    if (isWeekItem) {
+      final int key = weekDayKey!;
+      final list = weekTasks[key]!;
+      prev = Map<String, dynamic>.from(list[idx]);
+    } else {
+      prev = Map<String, dynamic>.from(todayTasks[idx]);
+    }
+
+    // Оптимистично меняем статус
     setState(() {
-      final taskIndex = todayTasks.indexWhere((task) => task['id'] == taskId);
-      if (taskIndex != -1) {
-        todayTasks[taskIndex]['status'] = newStatus;
-        todayTasks[taskIndex]['done'] = newStatus == 'done';
+      if (isWeekItem) {
+        final int key = weekDayKey!;
+        final list = weekTasks[key]!;
+        list[idx]['status'] = newStatus;
+        list[idx]['done'] = newStatus == 'done';
+        weekTasks[key] = list;
+      } else {
+        todayTasks[idx]['status'] = newStatus;
+        todayTasks[idx]['done'] = newStatus == 'done';
+        priorityTask = _selectPriorityTask(todayTasks);
       }
     });
+
+    if (!_isApiConnected) return;
+
+    try {
+      if (newStatus == 'done') {
+        final res = await _apiService.tasks.completeTask(taskId);
+        if (res.isSuccess && res.data != null) {
+          final updated = TaskConverter.apiTaskToMap(res.data!);
+          setState(() {
+            if (isWeekItem) {
+              final int key = weekDayKey!;
+              final list = weekTasks[key]!;
+              list[idx] = updated;
+              weekTasks[key] = list;
+            } else {
+              todayTasks[idx] = updated;
+              priorityTask = _selectPriorityTask(todayTasks);
+            }
+          });
+          // Ревалидация после успешного ответа
+          _revalidateTasksSilent();
+        } else {
+          throw Exception(res.error ?? 'Не удалось завершить задачу');
+        }
+      } else {
+        // Бэк требует обязательные поля title/priority/deadline при PUT /tasks/:id
+        final String title = prev['text'] as String? ?? '';
+        final String apiPriority = TaskConverter.uiPriorityToEnum(prev['priority'] as String? ?? 'medium');
+        final DateTime deadline = (prev['deadline'] as DateTime? ?? DateTime.now());
+        final apiStatus = TaskConverter.convertStatusToApi(newStatus);
+        final res = await _apiService.tasks.updateTask(
+          taskId,
+          UpdateTaskDto(
+            title: title,
+            priority: apiPriority,
+            deadline: deadline,
+            status: apiStatus,
+          ),
+        );
+        if (res.isSuccess && res.data != null) {
+          final updated = TaskConverter.apiTaskToMap(res.data!);
+          setState(() {
+            if (isWeekItem) {
+              final int key = weekDayKey!;
+              final list = weekTasks[key]!;
+              list[idx] = updated;
+              weekTasks[key] = list;
+            } else {
+              todayTasks[idx] = updated;
+              priorityTask = _selectPriorityTask(todayTasks);
+            }
+          });
+          // Ревалидация после успешного ответа
+          _revalidateTasksSilent();
+        } else {
+          throw Exception(res.error ?? 'Не удалось обновить статус');
+        }
+      }
+    } catch (e) {
+      // Откат если ошибка
+      setState(() {
+        if (isWeekItem) {
+          final int key = weekDayKey!;
+          final list = weekTasks[key]!;
+          list[idx] = prev;
+          weekTasks[key] = list;
+        } else {
+          todayTasks[idx] = prev;
+          priorityTask = _selectPriorityTask(todayTasks);
+        }
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка: $e'),
+            backgroundColor: PRIMETheme.warn,
+          ),
+        );
+      }
+    }
   }
 
   String _formatTime(int seconds) {
@@ -292,20 +535,166 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
     return '${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
   }
 
+  // Подгрузка задач недели
+  Future<void> _loadWeekTasksFromApi() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final response = await _apiService.tasks.getWeekTasks();
+      if (response.isSuccess && response.data != null) {
+        final maps = TaskConverter.apiTasksToMaps(response.data!);
+        final grouped = <int, List<Map<String, dynamic>>>{
+          1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [],
+        };
+        for (final m in maps) {
+          final DateTime d = (m['deadline'] as DateTime?) ?? DateTime.now();
+          final wd = d.weekday; // 1 (Mon) .. 7 (Sun)
+          grouped[wd]!.add(m);
+        }
+        setState(() {
+          weekTasks = grouped;
+          _isApiConnected = true;
+          _isLoading = false;
+        });
+      } else {
+        _handleApiError(response.error ?? 'Неизвестная ошибка API');
+        _fillWeekWithFallback();
+      }
+    } catch (e) {
+      _handleApiError('Ошибка сети: $e');
+      _fillWeekWithFallback();
+    }
+  }
+
+  void _fillWeekWithFallback() {
+    final fallback = TaskConverter.getFallbackTasks();
+    final grouped = <int, List<Map<String, dynamic>>>{
+      1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [],
+    };
+    for (final m in fallback) {
+      final DateTime d = (m['deadline'] as DateTime?) ?? DateTime.now();
+      grouped[d.weekday]!.add(m);
+    }
+    setState(() {
+      weekTasks = grouped;
+    });
+  }
+
+  // Тихая ревалидация: подтянуть актуальные статусы с сервера без мигания лоадера/ошибок
+  Future<void> _revalidateTasksSilent() async {
+    if (!_isApiConnected) return; // если оффлайн, пропускаем
+    try {
+      final todayFuture = _apiService.tasks.getTodayTasks();
+      final weekFuture = _apiService.tasks.getWeekTasks();
+      final results = await Future.wait([todayFuture, weekFuture]);
+
+      if (!mounted) return;
+
+      final todayResp = results[0];
+      final weekResp = results[1];
+
+      bool anySuccess = false;
+
+      if (todayResp.isSuccess && todayResp.data != null) {
+        final maps = TaskConverter.apiTasksToMaps(todayResp.data!);
+        setState(() {
+          todayTasks = maps;
+          priorityTask = _selectPriorityTask(todayTasks);
+        });
+        anySuccess = true;
+      }
+
+      if (weekResp.isSuccess && weekResp.data != null) {
+        final maps = TaskConverter.apiTasksToMaps(weekResp.data!);
+        final grouped = <int, List<Map<String, dynamic>>>{
+          1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [],
+        };
+        for (final m in maps) {
+          final DateTime d = (m['deadline'] as DateTime?) ?? DateTime.now();
+          grouped[d.weekday]!.add(m);
+        }
+        setState(() {
+          weekTasks = grouped;
+        });
+        anySuccess = true;
+      }
+
+      if (anySuccess) {
+        setState(() {
+          _isApiConnected = true;
+        });
+      }
+    } catch (_) {
+      // тихо игнорируем ошибки ревалидации
+    }
+  }
+
+  void _onModeChanged(bool value) {
+    setState(() {
+      isWeekMode = value;
+    });
+    if (value) {
+      _loadWeekTasksFromApi();
+    } else {
+      _loadTasksFromApi();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return BottomNavScaffold(
       currentRoute: '/tasks',
       child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
+        child: RefreshIndicator(
+          onRefresh: _refreshTasks,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(16),
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (_isLoading) ...[
+                const Center(child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: CircularProgressIndicator(color: PRIMETheme.primary),
+                )),
+              ],
+              if (_errorMessage != null) ...[
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: PRIMETheme.warn.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: PRIMETheme.warn),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, color: PRIMETheme.warn),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Проблема с API: ${_errorMessage}',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: PRIMETheme.warn,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _refreshTasks,
+                        child: const Text('Повторить', style: TextStyle(color: PRIMETheme.warn)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               // Переключатель Сегодня/Неделя
               _ModeSwitcher(
                 isWeekMode: isWeekMode,
-                onChanged: (value) => setState(() => isWeekMode = value),
+                onChanged: _onModeChanged,
               ),
               const SizedBox(height: 24),
 
@@ -316,6 +705,7 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
                 onStartFocus: _startFocusMode,
                 onStopFocus: _stopFocusMode,
                 formatTime: _formatTime,
+                priorityTitle: priorityTask != null ? (priorityTask!['text'] as String) : null,
               ),
               const SizedBox(height: 24),
 
@@ -327,7 +717,10 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
                   onAddTask: _addNewTask,
                 ),
               ] else ...[
-                _WeekTasks(),
+                _WeekTasks(
+                  groupedTasks: weekTasks,
+                  onTaskToggle: _toggleTask,
+                ),
               ],
               const SizedBox(height: 24),
 
@@ -337,9 +730,10 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
                 inProgressTasks: _getTasksByStatus('in_progress'),
                 doneTasks: _getTasksByStatus('done'),
                 onTaskTap: _showTaskDetail,
-                onStatusChanged: _updateTaskStatus,
+                onStatusChanged: (taskId, status) => _changeTaskStatus(taskId, status),
               ),
             ],
+            ),
           ),
         ),
       ),
@@ -395,18 +789,7 @@ class _TaskDetailDialogState extends State<_TaskDetailDialog> {
     }
   }
 
-  String _getStatusText(String status) {
-    switch (status) {
-      case 'assigned':
-        return 'Назначено';
-      case 'in_progress':
-        return 'В работе';
-      case 'done':
-        return 'Готово';
-      default:
-        return 'Неизвестно';
-    }
-  }
+  // _getStatusText удален как неиспользуемый
 
   String _formatDeadline(DateTime deadline) {
     final now = DateTime.now();
@@ -894,6 +1277,7 @@ class _PrioritySection extends StatelessWidget {
   final VoidCallback onStartFocus;
   final VoidCallback onStopFocus;
   final String Function(int) formatTime;
+  final String? priorityTitle;
 
   const _PrioritySection({
     required this.isFocusMode,
@@ -901,6 +1285,7 @@ class _PrioritySection extends StatelessWidget {
     required this.onStartFocus,
     required this.onStopFocus,
     required this.formatTime,
+    this.priorityTitle,
   });
 
   @override
@@ -969,12 +1354,22 @@ class _PrioritySection extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 12),
-          Text(
-            'Завершить дизайн мобильного приложения для клиента Alpha Corp',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              fontSize: isSmallScreen ? 14 : null,
+          if (priorityTitle != null) ...[
+            Text(
+              priorityTitle!,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                fontSize: isSmallScreen ? 14 : null,
+              ),
             ),
-          ),
+          ] else ...[
+            Text(
+              'Нет приоритетной задачи на сегодня',
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: PRIMETheme.sandWeak,
+                fontSize: isSmallScreen ? 14 : null,
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
@@ -1106,9 +1501,19 @@ class _TodayTasks extends StatelessWidget {
 }
 
 class _WeekTasks extends StatelessWidget {
+  final Map<int, List<Map<String, dynamic>>> groupedTasks;
+  final Function(String) onTaskToggle;
+
+  const _WeekTasks({
+    required this.groupedTasks,
+    required this.onTaskToggle,
+  });
+
   @override
   Widget build(BuildContext context) {
-    final weekDays = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС'];
+    final weekDays = {
+      1: 'ПН', 2: 'ВТ', 3: 'СР', 4: 'ЧТ', 5: 'ПТ', 6: 'СБ', 7: 'ВС'
+    };
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1118,21 +1523,40 @@ class _WeekTasks extends StatelessWidget {
           style: Theme.of(context).textTheme.titleLarge,
         ),
         const SizedBox(height: 12),
-        ...weekDays.map((day) => Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                day,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              _TaskItem(text: 'Задача для $day', isDone: day == 'ПН' || day == 'ВТ'),
-              if (day == 'СР') const _TaskItem(text: 'Дополнительная задача', isDone: false),
-            ],
-          ),
-        )),
+        ...weekDays.entries.map((entry) {
+          final wd = entry.key;
+          final label = entry.value;
+          final items = groupedTasks[wd] ?? const [];
+          return Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                if (items.isEmpty)
+                  Text(
+                    'Нет задач',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: PRIMETheme.sandWeak,
+                    ),
+                  )
+                else
+                  ...items.map((task) => _TaskItem(
+                        text: task['text'] as String,
+                        isDone: task['done'] as bool? ?? false,
+                        habitName: task['habit'] as String?,
+                        taskId: task['id'] as String,
+                        task: task,
+                        onToggle: onTaskToggle,
+                      )),
+              ],
+            ),
+          );
+        }),
       ],
     );
   }
@@ -1275,6 +1699,7 @@ class _WorkflowSection extends StatelessWidget {
                   tasks: assignedTasks, 
                   color: PRIMETheme.sandWeak, 
                   isCompact: true,
+                  columnStatus: 'assigned',
                   onTaskTap: onTaskTap,
                   onStatusChanged: onStatusChanged,
                 ),
@@ -1284,6 +1709,7 @@ class _WorkflowSection extends StatelessWidget {
                   tasks: inProgressTasks, 
                   color: PRIMETheme.warn, 
                   isCompact: true,
+                  columnStatus: 'in_progress',
                   onTaskTap: onTaskTap,
                   onStatusChanged: onStatusChanged,
                 ),
@@ -1293,6 +1719,7 @@ class _WorkflowSection extends StatelessWidget {
                   tasks: doneTasks, 
                   color: PRIMETheme.success, 
                   isCompact: true,
+                  columnStatus: 'done',
                   onTaskTap: onTaskTap,
                   onStatusChanged: onStatusChanged,
                 ),
@@ -1310,6 +1737,7 @@ class _WorkflowSection extends StatelessWidget {
                   title: 'Назначено', 
                   tasks: assignedTasks, 
                   color: PRIMETheme.sandWeak,
+                  columnStatus: 'assigned',
                   onTaskTap: onTaskTap,
                   onStatusChanged: onStatusChanged,
                 ),
@@ -1320,6 +1748,7 @@ class _WorkflowSection extends StatelessWidget {
                   title: 'В работе', 
                   tasks: inProgressTasks, 
                   color: PRIMETheme.warn,
+                  columnStatus: 'in_progress',
                   onTaskTap: onTaskTap,
                   onStatusChanged: onStatusChanged,
                 ),
@@ -1330,6 +1759,7 @@ class _WorkflowSection extends StatelessWidget {
                   title: 'Готово', 
                   tasks: doneTasks, 
                   color: PRIMETheme.success,
+                  columnStatus: 'done',
                   onTaskTap: onTaskTap,
                   onStatusChanged: onStatusChanged,
                 ),
@@ -1349,6 +1779,7 @@ class _WorkflowColumn extends StatelessWidget {
   final bool isCompact;
   final Function(Map<String, dynamic>) onTaskTap;
   final Function(String, String) onStatusChanged;
+  final String columnStatus;
 
   const _WorkflowColumn({
     required this.title,
@@ -1356,35 +1787,35 @@ class _WorkflowColumn extends StatelessWidget {
     required this.color,
     required this.onTaskTap,
     required this.onStatusChanged,
+    required this.columnStatus,
     this.isCompact = false,
   });
 
-  Color _getPriorityColor(String priority) {
-    switch (priority) {
-      case 'high':
-        return PRIMETheme.warn;
-      case 'medium':
-        return PRIMETheme.primary;
-      case 'low':
-        return PRIMETheme.success;
-      default:
-        return PRIMETheme.sandWeak;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: isCompact ? 140 : null, // Увеличиваем ширину для мобильных
-      padding: EdgeInsets.all(isCompact ? 8 : 12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: PRIMETheme.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return DragTarget<Map<String, dynamic>>(
+      onWillAcceptWithDetails: (details) => true,
+      onAcceptWithDetails: (details) {
+        final data = details.data;
+        final draggedId = data['id'] as String?;
+        if (draggedId != null) {
+          onStatusChanged(draggedId, columnStatus);
+        }
+      },
+      builder: (context, candidateData, rejectedData) {
+        final isHovering = candidateData.isNotEmpty;
+        return Container(
+          width: isCompact ? 140 : null,
+          padding: EdgeInsets.all(isCompact ? 8 : 12),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: isHovering ? color : PRIMETheme.line, width: isHovering ? 2 : 1),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
           // Заголовок колонки
           Row(
             children: [
@@ -1429,13 +1860,13 @@ class _WorkflowColumn extends StatelessWidget {
           SizedBox(height: isCompact ? 6 : 8),
           
           // Карточки задач с drag-and-drop
-          ...tasks.map((task) => _KanbanTaskCard(
-            task: task,
-            isCompact: isCompact,
-            color: color,
-            onTap: () => onTaskTap(task),
-            onStatusChanged: (newStatus) => onStatusChanged(task['id'] as String, newStatus),
-          )),
+      ...tasks.map((task) => _KanbanTaskCard(
+                task: task,
+                isCompact: isCompact,
+                color: color,
+                onTap: () => onTaskTap(task),
+        onQuickChangeStatus: (status) => onStatusChanged(task['id'] as String, status),
+              )),
           
           // Подсказка если колонка пустая
           if (tasks.isEmpty) ...[
@@ -1460,20 +1891,14 @@ class _WorkflowColumn extends StatelessWidget {
               ),
             ),
           ],
-        ],
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
   
-  bool _isDeadlineClose(DateTime deadline) {
-    final now = DateTime.now();
-    final difference = deadline.difference(now);
-    return difference.inDays <= 1; // Показываем для задач с дедлайном сегодня или завтра
-  }
-  
-  bool _isOverdue(DateTime deadline) {
-    return deadline.isBefore(DateTime.now());
-  }
+  // Вспомогательные методы в этом виджете не используются — удалены
 }
 
 class _KanbanTaskCard extends StatelessWidget {
@@ -1481,14 +1906,14 @@ class _KanbanTaskCard extends StatelessWidget {
   final bool isCompact;
   final Color color;
   final VoidCallback onTap;
-  final Function(String) onStatusChanged;
+  final Function(String) onQuickChangeStatus;
 
   const _KanbanTaskCard({
     required this.task,
     required this.isCompact,
     required this.color,
     required this.onTap,
-    required this.onStatusChanged,
+    required this.onQuickChangeStatus,
   });
 
   Color _getPriorityColor(String priority) {
@@ -1548,34 +1973,22 @@ class _KanbanTaskCard extends StatelessWidget {
         ),
         child: _buildCardContent(context, true),
       ),
-      child: DragTarget<Map<String, dynamic>>(
-        onWillAcceptWithDetails: (details) => details.data['id'] != task['id'],
-        onAcceptWithDetails: (details) {
-          // Определяем новый статус для перемещенной задачи
-          String newStatus = task['status'] as String;
-          onStatusChanged(newStatus);
-        },
-        builder: (context, candidateData, rejectedData) {
-          final isHovering = candidateData.isNotEmpty;
-          
-          return GestureDetector(
-            onTap: onTap,
-            onLongPress: () => _showQuickActions(context),
-            child: Container(
-              margin: EdgeInsets.only(bottom: isCompact ? 4 : 6),
-              padding: EdgeInsets.all(isCompact ? 6 : 8),
-              decoration: BoxDecoration(
-                color: isHovering ? color.withOpacity(0.1) : PRIMETheme.bg,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(
-                  color: isHovering ? color : PRIMETheme.line,
-                  width: isHovering ? 2 : 1,
-                ),
-              ),
-              child: _buildCardContent(context, false),
+      child: GestureDetector(
+        onTap: onTap,
+        onLongPress: () => _showQuickActions(context),
+        child: Container(
+          margin: EdgeInsets.only(bottom: isCompact ? 4 : 6),
+          padding: EdgeInsets.all(isCompact ? 6 : 8),
+          decoration: BoxDecoration(
+            color: PRIMETheme.bg,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: PRIMETheme.line,
+              width: 1,
             ),
-          );
-        },
+          ),
+          child: _buildCardContent(context, false),
+        ),
       ),
     );
   }
@@ -1645,7 +2058,7 @@ class _KanbanTaskCard extends StatelessWidget {
       ),
       builder: (context) => _QuickActionsSheet(
         task: task,
-        onStatusChanged: onStatusChanged,
+        onStatusChanged: onQuickChangeStatus,
       ),
     );
   }
