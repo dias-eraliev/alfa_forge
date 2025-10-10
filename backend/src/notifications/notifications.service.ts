@@ -301,8 +301,8 @@ export class NotificationsService {
     const body: any = {
       app_id: appId,
       include_player_ids: playerIds.length ? playerIds : undefined,
-      // fallback: если нет playerIds, можем отправить по external_user_ids (при условии вызова OneSignal.login(externalId) на клиенте)
-      include_external_user_ids: users.length ? users : undefined,
+      // fallback по external_user_ids используем только если нет явных playerIds
+      include_external_user_ids: playerIds.length ? undefined : (users.length ? users : undefined),
       target_channel: 'push',
       headings: { en: notification.title },
       contents: { en: notification.message },
@@ -335,6 +335,17 @@ export class NotificationsService {
     });
 
     const result = await resp.json().catch(() => ({}));
+
+    // Если OneSignal вернул невалидные player_id — удалим их из нашей БД, чтобы не слать на них в будущем
+    try {
+      const invalidIds: string[] | undefined = (result?.errors?.invalid_player_ids as string[]) || undefined;
+      if (invalidIds && invalidIds.length) {
+        await this.prisma.deviceToken.deleteMany({ where: { playerId: { in: invalidIds } } });
+      }
+    } catch (e) {
+      void e; // ignore prune errors
+    }
+
     if (!resp.ok) {
       return { message: 'Ошибка отправки в OneSignal', status: resp.status, result };
     }
