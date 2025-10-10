@@ -16,6 +16,10 @@
         android:label="PRIME_forge"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- Required by Google Play services / OneSignal to verify GMS version -->
+        <meta-data
+            android:name="com.google.android.gms.version"
+            android:value="@integer/google_play_services_version" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

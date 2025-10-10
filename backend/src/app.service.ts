@@ -6,7 +6,7 @@ export class AppService {
   constructor(private readonly prisma: PrismaService) { }
   getHello() {
     try {
-      return this.prisma.user.findMany();
+      return "Hello, world!"
     } catch (error) {
       console.error('Error fetching users:', error);
       return 'Error fetching users';

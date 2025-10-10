@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiClient {
-  static const String baseUrl = 'http://localhost:3000'; // Измените на ваш URL
+  static const String baseUrl = 'https://alfa-backend.abai.live'; // Измените на ваш URL
   static ApiClient? _instance;
   late http.Client _client;
   String? _accessToken;

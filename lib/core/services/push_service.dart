@@ -1,28 +1,44 @@
-// import 'package:onesignal_flutter/onesignal_flutter.dart';
-// import '../api/api_client.dart';
-// import 'dart:io' show Platform;
+import 'package:onesignal_flutter/onesignal_flutter.dart';
+import '../api/api_client.dart';
+import 'dart:io' show Platform;
 
 class PushService {
   static Future<void> registerIfPossible() async {
-    // TODO: Обновить получение OneSignal playerId под SDK v5 API и выполнить регистрацию на бэкенде
-    // Пример (будет скорректирован после проверки API):
-    // final playerId = await OneSignal.User.pushSubscription.getId();
-    // if (playerId == null || !ApiClient.instance.isAuthenticated) return;
-    // final platform = Platform.isIOS ? 'ios' : Platform.isAndroid ? 'android' : 'unknown';
-    // await ApiClient.instance.post<Map<String, dynamic>>(
-    //   '/notifications/device/register',
-    //   body: { 'playerId': playerId, 'platform': platform },
-    // );
+    try {
+      final sub = OneSignal.User.pushSubscription;
+      final playerId = sub.id;
+      if (playerId == null || playerId.isEmpty) {
+        // будет установлен позже; подписка ещё не активна
+        return;
+      }
+      if (!ApiClient.instance.isAuthenticated) return;
+      final platform = Platform.isIOS ? 'ios' : Platform.isAndroid ? 'android' : 'unknown';
+      final res = await ApiClient.instance.post<Map<String, dynamic>>(
+        '/notifications/device/register',
+        body: { 'playerId': playerId, 'platform': platform },
+      );
+      // ignore: avoid_print
+      print('🔔 Registered device on backend: ${res.isSuccess}');
+    } catch (e) {
+      // ignore: avoid_print
+      print('🔔 registerIfPossible error: $e');
+    }
   }
 
   static Future<void> unregisterIfPossible() async {
-    // TODO: Аналогично обновить под SDK v5 API
-    // final playerId = await OneSignal.User.pushSubscription.getId();
-    // if (playerId == null) return;
-    // await ApiClient.instance.post<Map<String, dynamic>>(
-    //   '/notifications/device/unregister',
-    //   body: { 'playerId': playerId },
-    // );
+    try {
+      final playerId = OneSignal.User.pushSubscription.id;
+      if (playerId == null || playerId.isEmpty) return;
+      final res = await ApiClient.instance.post<Map<String, dynamic>>(
+        '/notifications/device/unregister',
+        body: { 'playerId': playerId },
+      );
+      // ignore: avoid_print
+      print('🔔 Unregistered device on backend: ${res.isSuccess}');
+    } catch (e) {
+      // ignore: avoid_print
+      print('🔔 unregisterIfPossible error: $e');
+    }
   }
 
   // WEB only: prompt subscription via bridge (no-op on mobile)

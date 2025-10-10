@@ -5,8 +5,8 @@ import '../models/api_models.dart';
 import '../api/api_client.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:onesignal_flutter/onesignal_flutter.dart';
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:js' as js;
+import '../web/onesignal_bridge.dart';
+import '../services/push_service.dart';
 
 enum AuthState {
   initial,
@@ -44,6 +44,8 @@ class AuthProvider extends ChangeNotifier {
       if (isAuth) {
         print('👤 Loading current user...');
         await _loadCurrentUser();
+        // Попробуем зарегистрировать устройство на бэкенде, если есть playerId
+        await PushService.registerIfPossible();
       } else {
         print('👤 No auth tokens, setting unauthenticated');
         _setState(AuthState.unauthenticated);
@@ -103,6 +105,7 @@ class AuthProvider extends ChangeNotifier {
         _setState(AuthState.authenticated);
         // OneSignal External ID login
         _oneSignalLogin();
+        await PushService.registerIfPossible();
         return true;
       } else {
         _setError(response.error ?? 'Ошибка регистрации');
@@ -137,6 +140,11 @@ class AuthProvider extends ChangeNotifier {
         _setState(AuthState.authenticated);
         // OneSignal External ID login
         _oneSignalLogin();
+        await PushService.registerIfPossible();
+        try {
+          final sub = OneSignal.User.pushSubscription;
+          debugPrint('🔔 After login: optedIn=' + sub.optedIn.toString() + ', id=' + (sub.id ?? 'null'));
+        } catch (_) {}
         return true;
       } else {
         _setError(response.error ?? 'Неверные данные для входа');
@@ -157,6 +165,7 @@ class AuthProvider extends ChangeNotifier {
     try {
       // OneSignal External ID logout
       _oneSignalLogout();
+      await PushService.unregisterIfPossible();
       await _authService.signOut();
     } catch (e) {
       print('Ошибка при выходе: $e');
@@ -173,13 +182,7 @@ class AuthProvider extends ChangeNotifier {
       final uid = _user?.id;
       if (uid == null || uid.isEmpty) return;
       if (kIsWeb) {
-        try {
-          js.context.callMethod('eval', [
-            'if (window.OneSignalBridge && window.OneSignalBridge.login) { window.OneSignalBridge.login("' + uid + '"); }'
-          ]);
-        } catch (e) {
-          debugPrint('OneSignal web login error: $e');
-        }
+        try { OneSignalWebBridge.login(uid); } catch (e) { debugPrint('OneSignal web login error: $e'); }
       } else {
         try {
           OneSignal.login(uid);
@@ -195,13 +198,7 @@ class AuthProvider extends ChangeNotifier {
   void _oneSignalLogout() {
     try {
       if (kIsWeb) {
-        try {
-          js.context.callMethod('eval', [
-            'if (window.OneSignalBridge && window.OneSignalBridge.logout) { window.OneSignalBridge.logout(); }'
-          ]);
-        } catch (e) {
-          debugPrint('OneSignal web logout error: $e');
-        }
+        try { OneSignalWebBridge.logout(); } catch (e) { debugPrint('OneSignal web logout error: $e'); }
       } else {
         try {
           OneSignal.logout();

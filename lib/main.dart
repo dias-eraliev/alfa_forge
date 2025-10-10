@@ -6,8 +6,8 @@ import 'core/providers/auth_provider.dart';
 import 'core/api/api_client.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:js' as js;
+import 'core/web/onesignal_bridge.dart';
+import 'core/services/push_service.dart';
 
 void main() async {
   print('🚀🚀🚀 APP MAIN START 🚀🚀🚀');
@@ -23,12 +23,8 @@ void main() async {
   print('🔔 OneSignal init path...');
   if (kIsWeb) {
     try {
-      js.context.callMethod('eval', [
-        'if (window.OneSignalBridge && window.OneSignalBridge.init) { window.OneSignalBridge.init(); }'
-      ]);
-      js.context.callMethod('eval', [
-        'if (window.OneSignalBridge && window.OneSignalBridge.requestPermission) { window.OneSignalBridge.requestPermission(); }'
-      ]);
+      OneSignalWebBridge.init();
+      OneSignalWebBridge.requestPermission();
     } catch (e) {
       print('OneSignal Web init error: $e');
     }
@@ -37,6 +33,28 @@ void main() async {
     OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
     OneSignal.initialize(oneSignalAppId);
     OneSignal.Notifications.requestPermission(true);
+    try {
+      // Подпишемся на изменения статуса подписки, чтобы видеть, когда появляется id
+      OneSignal.User.pushSubscription.addObserver((state) {
+        try {
+          final cur = state.current;
+          print('🔔 OneSignal subscription changed: optedIn=' + cur.optedIn.toString() + ', id=' + (cur.id ?? 'null'));
+          if (ApiClient.instance.isAuthenticated && cur.id != null) {
+            // как только появляется id, регистрируем устройство на бэкенде
+            PushService.registerIfPossible();
+          }
+        } catch (e) {
+          print('🔔 OneSignal observer error: $e');
+        }
+      });
+      final sub = OneSignal.User.pushSubscription;
+      print('🔔 OneSignal initial: optedIn=' + sub.optedIn.toString() + ', id=' + (sub.id ?? 'null'));
+      if (ApiClient.instance.isAuthenticated && sub.id != null) {
+        await PushService.registerIfPossible();
+      }
+    } catch (e) {
+      print('🔔 OneSignal debug read error: $e');
+    }
   } else {
     print('🔔 OneSignal APP ID not set for mobile. Skipping mobile init.');
   }

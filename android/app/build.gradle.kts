@@ -5,6 +5,12 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Exclude deprecated Firebase IID to avoid duplicate classes with firebase-messaging 23.x
+configurations.configureEach {
+    exclude(group = "com.google.firebase", module = "firebase-iid")
+    exclude(group = "com.google.firebase", module = "firebase-iid-interop")
+}
+
 android {
     namespace = "com.example.alfa_forge"
     compileSdk = 36
