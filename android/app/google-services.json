@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "47527057565",
+    "project_id": "allfa-forge",
+    "storage_bucket": "allfa-forge.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:47527057565:android:50f2edfbfffec2bfde1c74",
+        "android_client_info": {
+          "package_name": "com.example.alfa_forge"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBQ4AaqNvYqI3XyBZBWBRf552nQk7uzVc4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

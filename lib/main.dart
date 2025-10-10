@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart' as provider;
 import 'app/app.dart';
+import 'app/router.dart';
 import 'core/providers/auth_provider.dart';
 import 'core/api/api_client.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
@@ -33,6 +34,36 @@ void main() async {
     OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
     OneSignal.initialize(oneSignalAppId);
     OneSignal.Notifications.requestPermission(true);
+    // Открытие экрана по клику на уведомление
+    OneSignal.Notifications.addClickListener((event) {
+      try {
+        final data = Map<String, dynamic>.from(event.notification.additionalData ?? {});
+        final url = event.notification.launchUrl;
+        // Примеры data: { type: 'brotherhood_reply', postId: '...' } | { type: 'habit', habitId: '...' } | { type: 'task', taskId: '...' }
+        if (data is Map) {
+          final type = data['type']?.toString();
+          switch (type) {
+            case 'brotherhood_reply':
+            case 'brotherhood_reaction':
+              // Открываем экран братства
+              router.go('/brotherhood');
+              return;
+            case 'habit':
+              router.go('/habits');
+              return;
+            case 'task':
+              router.go('/tasks');
+              return;
+          }
+        }
+        if (url != null && url.toString().startsWith('app://')) {
+          final path = url.toString().replaceFirst('app://', '/');
+          router.go(path);
+        }
+      } catch (e) {
+        print('🔔 Notification click handler error: $e');
+      }
+    });
     try {
       // Подпишемся на изменения статуса подписки, чтобы видеть, когда появляется id
       OneSignal.User.pushSubscription.addObserver((state) {

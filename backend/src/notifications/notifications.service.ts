@@ -11,6 +11,7 @@ import {
   BulkNotificationActionDto,
   SendNotificationDto,
   NotificationStatsDto,
+  NotificationType,
   // NotificationPriority,
   // NotificationStatus,
   QuoteCategory
@@ -276,7 +277,7 @@ export class NotificationsService {
 
   // Отправить уведомление (заглушка для будущей интеграции с push-сервисами)
   async sendNotification(sendNotificationDto: SendNotificationDto) {
-    const { userIds, notification } = sendNotificationDto;
+    const { userIds, notification, immediate } = sendNotificationDto;
     const users = Array.isArray(userIds) ? userIds : [userIds];
     // Получаем все playerId пользователей
     const tokens = await this.prisma.deviceToken.findMany({
@@ -297,7 +298,7 @@ export class NotificationsService {
     // Формируем payload для OneSignal (v1 notifications endpoint совместим)
     const playerIds = tokens.map(t => t.playerId);
 
-    const body = {
+    const body: any = {
       app_id: appId,
       include_player_ids: playerIds.length ? playerIds : undefined,
       // fallback: если нет playerIds, можем отправить по external_user_ids (при условии вызова OneSignal.login(externalId) на клиенте)
@@ -307,7 +308,17 @@ export class NotificationsService {
       contents: { en: notification.message },
       data: notification.data || undefined,
       url: notification.actionUrl || undefined,
-    } as any;
+    };
+
+    // Планирование (отложенная отправка)
+    // Если передано scheduledFor и immediate !== true, используем OneSignal send_after
+    if (notification.scheduledFor && immediate !== true) {
+      // Приводим к формату RFC2822/GMT, как рекомендует OneSignal, либо ISO8601 (поддерживается)
+      const sendAfterDate = new Date(notification.scheduledFor);
+      if (!isNaN(sendAfterDate.getTime())) {
+        body.send_after = sendAfterDate.toUTCString();
+      }
+    }
 
     const fetchFn: any = (globalThis as any).fetch;
     if (!fetchFn) {
@@ -329,6 +340,53 @@ export class NotificationsService {
     }
 
     return { message: 'Уведомление отправлено в OneSignal', result };
+  }
+
+  // ========== DOMAIN HELPERS: BROTHERHOOD ==========
+  async notifyBrotherhoodReply(postAuthorId: string, replierUserId: string, replyText: string, postId: string) {
+    if (postAuthorId === replierUserId) return { skipped: true };
+
+    const replier = await this.prisma.user.findUnique({
+      where: { id: replierUserId },
+      select: { username: true, profile: { select: { fullName: true } } },
+    });
+    const name = replier?.profile?.fullName || replier?.username || 'Пользователь';
+    const preview = replyText.length > 100 ? replyText.slice(0, 100) + '…' : replyText;
+
+    return this.sendNotification({
+      userIds: postAuthorId,
+      notification: {
+        title: 'Новый ответ на ваш пост',
+        message: `${name}: ${preview}`,
+        type: NotificationType.SYSTEM,
+        data: { type: 'brotherhood_reply', postId },
+        actionUrl: `app://brotherhood/post/${postId}`,
+      },
+      immediate: true,
+    });
+  }
+
+  async notifyBrotherhoodReaction(postAuthorId: string, reactorUserId: string, reactionType: string, postId: string) {
+    if (postAuthorId === reactorUserId) return { skipped: true };
+
+    const reactor = await this.prisma.user.findUnique({
+      where: { id: reactorUserId },
+      select: { username: true, profile: { select: { fullName: true } } },
+    });
+    const name = reactor?.profile?.fullName || reactor?.username || 'Пользователь';
+    const emoji = reactionType === 'FIRE' ? '🔥' : reactionType === 'THUMBS_UP' ? '👍' : '💬';
+
+    return this.sendNotification({
+      userIds: postAuthorId,
+      notification: {
+        title: 'Новая реакция на ваш пост',
+        message: `${name} отреагировал(а) ${emoji}`,
+        type: NotificationType.SYSTEM,
+        data: { type: 'brotherhood_reaction', postId, reactionType },
+        actionUrl: `app://brotherhood/post/${postId}`,
+      },
+      immediate: true,
+    });
   }
 
   // ========== DEVICE TOKEN MANAGEMENT ==========

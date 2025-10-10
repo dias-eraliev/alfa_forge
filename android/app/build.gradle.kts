@@ -3,12 +3,15 @@ plugins {
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    // Apply Google Services plugin to process google-services.json (for FCM)
+    id("com.google.gms.google-services")
 }
 
 // Exclude deprecated Firebase IID to avoid duplicate classes with firebase-messaging 23.x
 configurations.configureEach {
+    // Exclude deprecated Firebase IID to avoid duplicate classes with firebase-messaging 23.x
     exclude(group = "com.google.firebase", module = "firebase-iid")
-    exclude(group = "com.google.firebase", module = "firebase-iid-interop")
+    // Keep firebase-iid-interop, it's needed by firebase-messaging at runtime
 }
 
 android {

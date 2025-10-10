@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePostDto, CreateReplyDto, ToggleReactionDto } from './brotherhood.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class BrotherhoodService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private notifications: NotificationsService) {}
 
   async getFeed(userId: string) {
     // Простая лента: последние посты, с агрегацией реакций и первыми 2 ответами
@@ -126,6 +127,13 @@ export class BrotherhoodService {
       },
       include: { user: true },
     });
+
+    // Notify post author (skip self-notify)
+    try {
+      await this.notifications.notifyBrotherhoodReply(post.userId, userId, dto.text, postId);
+  } catch {
+      // не падаем из-за уведомлений
+    }
     return reply;
   }
 
@@ -142,6 +150,16 @@ export class BrotherhoodService {
     await this.prisma.brotherhoodReaction.create({
       data: { postId, userId, type: dto.type },
     });
+
+    // Notify post author about reaction
+    try {
+      const post = await this.prisma.brotherhoodPost.findUnique({ where: { id: postId }, select: { userId: true } });
+      if (post) {
+        await this.notifications.notifyBrotherhoodReaction(post.userId, userId, dto.type, postId);
+      }
+  } catch {
+      // глушим ошибки нотификаций
+    }
     return { removed: false };
   }
 }

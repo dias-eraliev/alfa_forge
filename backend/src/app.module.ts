@@ -13,6 +13,7 @@ import { ExercisesModule } from './exercises/exercises.module';
 import { ProgressModule } from './progress/progress.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { BrotherhoodModule } from './brotherhood/brotherhood.module';
+import { AppSchedulerModule } from './scheduler/scheduler.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { BrotherhoodModule } from './brotherhood/brotherhood.module';
     ProgressModule,
     NotificationsModule,
     BrotherhoodModule,
+    AppSchedulerModule,
   ],
   controllers: [AppController],
   providers: [AppService],
