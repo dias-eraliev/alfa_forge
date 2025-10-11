@@ -35,7 +35,7 @@ export class UsersController {
 
   @Post('habits/selected')
   async saveSelectedHabits(@Request() req: any, @Body() dto: SelectedHabitsDto) {
-    return this.usersService.saveSelectedHabits(req.user.id, dto.habitIds);
+    return this.usersService.saveSelectedHabits(req.user.id, dto.habitIds, dto.habits);
   }
 
   @Get('stats')

@@ -50,7 +50,7 @@ class _AdvancedAddHabitDialogState extends State<AdvancedAddHabitDialog>
   
   // Настройки уведомлений
   bool _enableReminders = true;
-  List<String> _motivationalMessages = [];
+  final List<String> _motivationalMessages = [];
 
   @override
   void initState() {
@@ -1229,7 +1229,7 @@ class _AdvancedAddHabitDialogState extends State<AdvancedAddHabitDialog>
                     Switch(
                       value: _enableReminders,
                       onChanged: (value) => setState(() => _enableReminders = value),
-                      activeColor: PRIMETheme.primary,
+                      activeThumbColor: PRIMETheme.primary,
                     ),
                   ],
                 ),

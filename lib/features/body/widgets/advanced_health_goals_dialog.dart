@@ -227,7 +227,9 @@ class _AdvancedHealthGoalsDialogState extends State<AdvancedHealthGoalsDialog>
       if (!_showCompleted && goal.isCompleted) return false;
       if (_filterPriority != null && goal.priority != _filterPriority) return false;
       if (_searchQuery.isNotEmpty && 
-          !goal.title.toLowerCase().contains(_searchQuery.toLowerCase())) return false;
+          !goal.title.toLowerCase().contains(_searchQuery.toLowerCase())) {
+        return false;
+      }
       return goal.isActive;
     }).toList();
 
@@ -271,11 +273,11 @@ class _AdvancedHealthGoalsDialogState extends State<AdvancedHealthGoalsDialog>
               prefixIcon: const Icon(Icons.search, color: PRIMETheme.sandWeak),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: PRIMETheme.line),
+                borderSide: const BorderSide(color: PRIMETheme.line),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: PRIMETheme.line),
+                borderSide: const BorderSide(color: PRIMETheme.line),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -296,7 +298,7 @@ class _AdvancedHealthGoalsDialogState extends State<AdvancedHealthGoalsDialog>
               // Фильтр по приоритету
               Expanded(
                 child: DropdownButtonFormField<HealthGoalPriority?>(
-                  value: _filterPriority,
+                  initialValue: _filterPriority,
                   decoration: InputDecoration(
                     labelText: 'Приоритет',
                     border: OutlineInputBorder(
@@ -957,7 +959,7 @@ class _DateSelector extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Icon(
+                const Icon(
                   Icons.calendar_today,
                   color: PRIMETheme.primary,
                   size: 20,

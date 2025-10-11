@@ -41,10 +41,18 @@ class OnboardingService {
   // Обновить выбранные привычки (если есть такой endpoint)
   Future<ApiResponse<Map<String, dynamic>>> updateSelectedHabits({
     required List<String> habitIds,
+    List<Map<String, dynamic>>? habits, // optional rich payload: [{id,name,description?,sphereId?}]
   }) async {
+    final body = <String, dynamic>{
+      'habitIds': habitIds,
+    };
+    if (habits != null && habits.isNotEmpty) {
+      body['habits'] = habits;
+    }
+
     return await _apiClient.post<Map<String, dynamic>>(
       '/users/habits/selected',
-      body: {'habitIds': habitIds},
+      body: body,
     );
   }
 

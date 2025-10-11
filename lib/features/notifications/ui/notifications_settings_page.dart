@@ -184,7 +184,7 @@ class NotificationsSettingsPage extends ConsumerWidget {
               onToggle: () => controller.toggleCategory(category.name),
             ),
           );
-        }).toList(),
+        }),
       ],
     );
   }

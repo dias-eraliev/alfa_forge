@@ -221,11 +221,11 @@ class _MeasurementHistoryDialogState extends State<MeasurementHistoryDialog>
                     fillColor: PRIMETheme.line.withOpacity(0.1),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: PRIMETheme.line),
+                      borderSide: const BorderSide(color: PRIMETheme.line),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: PRIMETheme.line),
+                      borderSide: const BorderSide(color: PRIMETheme.line),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -502,7 +502,7 @@ class _MeasurementHistoryDialogState extends State<MeasurementHistoryDialog>
               color: PRIMETheme.line.withOpacity(0.1),
               borderRadius: BorderRadius.circular(20),
             ),
-            child: Icon(
+            child: const Icon(
               Icons.timeline,
               size: 48,
               color: PRIMETheme.sandWeak,
@@ -1075,7 +1075,7 @@ class _MeasurementHistoryDialogState extends State<MeasurementHistoryDialog>
         children: [
           Row(
             children: [
-              Icon(Icons.analytics, color: PRIMETheme.success, size: 24),
+              const Icon(Icons.analytics, color: PRIMETheme.success, size: 24),
               const SizedBox(width: 12),
               Text(
                 'Общая статистика за ${_filter.period.name.toLowerCase()}',

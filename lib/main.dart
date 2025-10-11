@@ -40,23 +40,21 @@ void main() async {
         final data = Map<String, dynamic>.from(event.notification.additionalData ?? {});
         final url = event.notification.launchUrl;
         // Примеры data: { type: 'brotherhood_reply', postId: '...' } | { type: 'habit', habitId: '...' } | { type: 'task', taskId: '...' }
-        if (data is Map) {
-          final type = data['type']?.toString();
-          switch (type) {
-            case 'brotherhood_reply':
-            case 'brotherhood_reaction':
-              // Открываем экран братства
-              router.go('/brotherhood');
-              return;
-            case 'habit':
-              router.go('/habits');
-              return;
-            case 'task':
-              router.go('/tasks');
-              return;
-          }
+        final type = data['type']?.toString();
+        switch (type) {
+          case 'brotherhood_reply':
+          case 'brotherhood_reaction':
+            // Открываем экран братства
+            router.go('/brotherhood');
+            return;
+          case 'habit':
+            router.go('/habits');
+            return;
+          case 'task':
+            router.go('/tasks');
+            return;
         }
-        if (url != null && url.toString().startsWith('app://')) {
+              if (url != null && url.toString().startsWith('app://')) {
           final path = url.toString().replaceFirst('app://', '/');
           router.go(path);
         }
@@ -69,7 +67,7 @@ void main() async {
       OneSignal.User.pushSubscription.addObserver((state) {
         try {
           final cur = state.current;
-          print('🔔 OneSignal subscription changed: optedIn=' + cur.optedIn.toString() + ', id=' + (cur.id ?? 'null'));
+          print('🔔 OneSignal subscription changed: optedIn=${cur.optedIn}, id=${cur.id ?? 'null'}');
           if (ApiClient.instance.isAuthenticated && cur.id != null) {
             // как только появляется id, регистрируем устройство на бэкенде
             PushService.registerIfPossible();
@@ -79,7 +77,7 @@ void main() async {
         }
       });
       final sub = OneSignal.User.pushSubscription;
-      print('🔔 OneSignal initial: optedIn=' + sub.optedIn.toString() + ', id=' + (sub.id ?? 'null'));
+      print('🔔 OneSignal initial: optedIn=${sub.optedIn}, id=${sub.id ?? 'null'}');
       if (ApiClient.instance.isAuthenticated && sub.id != null) {
         await PushService.registerIfPossible();
       }

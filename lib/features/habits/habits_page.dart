@@ -190,11 +190,11 @@ class _HabitsPageState extends State<HabitsPage> with TickerProviderStateMixin {
                       builder: (context) {
                         final items = _uiHabitsFromApi;
                         if (items.isEmpty) {
-                          return Padding(
-                            padding: const EdgeInsets.all(24),
+                          return const Padding(
+                            padding: EdgeInsets.all(24),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.center,
-                              children: const [
+                              children: [
                                 SizedBox(height: 24),
                                 Icon(Icons.hourglass_empty, color: PRIMETheme.sandWeak, size: 48),
                                 SizedBox(height: 12),
@@ -268,10 +268,10 @@ class _HabitsPageState extends State<HabitsPage> with TickerProviderStateMixin {
             habitsData[habitId]![dayIndex] = false;
           });
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Привычка снята', style: TextStyle(color: PRIMETheme.sand)),
+            const SnackBar(
+              content: Text('Привычка снята', style: TextStyle(color: PRIMETheme.sand)),
               backgroundColor: PRIMETheme.line,
-              duration: const Duration(seconds: 1),
+              duration: Duration(seconds: 1),
             ),
           );
         } else {
@@ -294,10 +294,10 @@ class _HabitsPageState extends State<HabitsPage> with TickerProviderStateMixin {
             habitsData[habitId]![dayIndex] = true;
           });
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Привычка отмечена! 💪', style: TextStyle(color: PRIMETheme.sand)),
+            const SnackBar(
+              content: Text('Привычка отмечена! 💪', style: TextStyle(color: PRIMETheme.sand)),
               backgroundColor: PRIMETheme.primary,
-              duration: const Duration(seconds: 1),
+              duration: Duration(seconds: 1),
             ),
           );
         } else {
@@ -315,10 +315,10 @@ class _HabitsPageState extends State<HabitsPage> with TickerProviderStateMixin {
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Что-то пошло не так', style: TextStyle(color: PRIMETheme.sand)),
+        const SnackBar(
+          content: Text('Что-то пошло не так', style: TextStyle(color: PRIMETheme.sand)),
           backgroundColor: PRIMETheme.warn,
-          duration: const Duration(seconds: 2),
+          duration: Duration(seconds: 2),
         ),
       );
     }
@@ -380,8 +380,8 @@ class _HabitsPageState extends State<HabitsPage> with TickerProviderStateMixin {
             } catch (e) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Row(
-                    children: const [
+                  content: const Row(
+                    children: [
                       Icon(Icons.error_outline, color: PRIMETheme.sand, size: 20),
                       SizedBox(width: 8),
                       Expanded(child: Text('Ошибка создания привычки', style: TextStyle(color: PRIMETheme.sand))),

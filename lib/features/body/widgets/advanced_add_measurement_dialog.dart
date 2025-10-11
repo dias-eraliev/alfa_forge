@@ -31,8 +31,8 @@ class _AdvancedAddMeasurementDialogState extends State<AdvancedAddMeasurementDia
   // Данные формы
   MeasurementCategory? _selectedCategory;
   List<MeasurementType> _selectedTypes = [];
-  Map<String, double> _values = {};
-  Map<String, String> _conditions = {};
+  final Map<String, double> _values = {};
+  final Map<String, String> _conditions = {};
   String? _notes;
   String? _mood;
   double _confidence = 1.0;

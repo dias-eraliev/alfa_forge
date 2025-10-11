@@ -6,9 +6,7 @@
 // normalized PoseFrame (see pose_models.dart).
 //
 // NEXT: implement concrete detectors (see pushup_detector.dart).
-import 'dart:math' as math;
 import '../pose/pose_models.dart';
-import '../models/exercise_model.dart';
 
 /// Унифицированные фазы (общий супермножество).
 /// Конкретный детектор может использовать подмножество.

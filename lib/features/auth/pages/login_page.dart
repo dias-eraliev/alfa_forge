@@ -275,7 +275,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: PRIMETheme.primary, width: 2),
+          borderSide: const BorderSide(color: PRIMETheme.primary, width: 2),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
@@ -375,7 +375,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       children: [
         Row(
           children: [
-            Expanded(child: Divider(color: PRIMETheme.line)),
+            const Expanded(child: Divider(color: PRIMETheme.line)),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
@@ -385,7 +385,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                 ),
               ),
             ),
-            Expanded(child: Divider(color: PRIMETheme.line)),
+            const Expanded(child: Divider(color: PRIMETheme.line)),
           ],
         ),
         
@@ -406,7 +406,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
+                const Icon(
                   Icons.person_outline,
                   color: PRIMETheme.sandWeak,
                 ),

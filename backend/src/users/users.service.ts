@@ -116,7 +116,14 @@ export class UsersService {
          * Принимает IDs предустановленных привычек (frontend: early_rise, reading, workout, meditation)
          * и создает реальные Habit записи пользователю, избегая дублей по имени.
          */
-        async saveSelectedHabits(userId: string, habitIds: string[]) {
+        async saveSelectedHabits(userId: string, habitIds: string[], habits?: Array<{ id: string; name: string; description?: string; sphereId?: string }>) {
+            // Helper: resolve categoryId to an existing one, fallback to 'mind' if not found
+            const resolveCategoryId = async (candidate?: string): Promise<string> => {
+                const fallback = 'mind';
+                if (!candidate) return fallback;
+                const found = await this.prisma.habitCategory.findUnique({ where: { id: candidate } });
+                return found ? candidate : fallback;
+            };
             // Карта предустановленных привычек (соответствие ID → параметры Habit)
             const presetMap: Record<string, {
                 name: string;
@@ -156,42 +163,102 @@ export class UsersService {
             };
 
             const createdOrExisting: any[] = [];
-            for (const id of habitIds) {
-                const preset = presetMap[id];
-                if (!preset) continue; // пропускаем неизвестные ID
+            // Если пришёл подробный список — используем его приоритетно
+            if (habits && habits.length > 0) {
+                // Сопоставление sphereId -> categoryId
+                const sphereToCategory: Record<string, string> = {
+                    body: 'fitness',
+                    will: 'mind',
+                    focus: 'productivity',
+                    mind: 'mind',
+                    social: 'social',
+                    finance: 'financial',
+                    creativity: 'creative',
+                    lifestyle: 'lifestyle',
+                    health: 'health',
+                };
 
-                // Проверяем, есть ли у пользователя уже привычка с таким именем
-                const existing = await this.prisma.habit.findFirst({
-                    where: {
-                        userId,
-                        name: preset.name,
-                    },
-                });
+                for (const h of habits) {
+                    const preset = presetMap[h.id];
+                    const name = h.name || preset?.name;
+                    if (!name) continue;
+                    const description = h.description ?? preset?.description;
+                    const iconName = preset?.iconName ?? 'star';
+                    const colorHex = preset?.colorHex ?? '#7986CB';
+                    const rawCategoryId = (h.sphereId && sphereToCategory[h.sphereId]) ?? preset?.categoryId ?? undefined;
+                    const categoryId = await resolveCategoryId(rawCategoryId);
 
-                if (existing) {
-                    createdOrExisting.push(existing);
-                    continue;
+                    const existing = await this.prisma.habit.findFirst({
+                        where: { userId, name },
+                    });
+                    if (existing) {
+                        createdOrExisting.push(existing);
+                        continue;
+                    }
+
+                    const habit = await this.prisma.habit.create({
+                        data: {
+                            userId,
+                            name,
+                            description,
+                            iconName,
+                            colorHex,
+                            categoryId,
+                            frequencyType: 'DAILY' as any,
+                            isActive: true,
+                            currentStreak: 0,
+                            maxStreak: 0,
+                            strength: 0,
+                            specificWeekdays: [],
+                            tags: [],
+                            motivationalMessages: [],
+                        },
+                    });
+                    createdOrExisting.push(habit);
                 }
+            } else {
+                for (const id of habitIds) {
+                    const preset = presetMap[id];
+                    if (!preset) continue; // пропускаем неизвестные ID
 
-                const habit = await this.prisma.habit.create({
-                    data: {
-                        userId,
-                        name: preset.name,
-                        description: preset.description,
-                        iconName: preset.iconName,
-                        colorHex: preset.colorHex,
-                        categoryId: preset.categoryId,
-                        frequencyType: 'DAILY' as any,
-                        isActive: true,
-                        currentStreak: 0,
-                        maxStreak: 0,
-                        strength: 0,
-                        specificWeekdays: [],
-                        tags: [],
-                        motivationalMessages: [],
-                    },
-                });
-                createdOrExisting.push(habit);
+                    // Проверяем, есть ли у пользователя уже привычка с таким именем
+                    const existing = await this.prisma.habit.findFirst({
+                        where: {
+                            userId,
+                            name: preset.name,
+                        },
+                    });
+
+                    if (existing) {
+                        createdOrExisting.push(existing);
+                        continue;
+                    }
+
+                    const safeCategoryId = await (async () => {
+                        const found = await this.prisma.habitCategory.findUnique({ where: { id: preset.categoryId } });
+                        return found ? preset.categoryId : 'mind';
+                    })();
+
+                    const habit = await this.prisma.habit.create({
+                        data: {
+                            userId,
+                            name: preset.name,
+                            description: preset.description,
+                            iconName: preset.iconName,
+                            colorHex: preset.colorHex,
+                            categoryId: safeCategoryId,
+                            frequencyType: 'DAILY' as any,
+                            isActive: true,
+                            currentStreak: 0,
+                            maxStreak: 0,
+                            strength: 0,
+                            specificWeekdays: [],
+                            tags: [],
+                            motivationalMessages: [],
+                        },
+                    });
+                    createdOrExisting.push(habit);
+                }
             }
 
             return { count: createdOrExisting.length, habits: createdOrExisting };

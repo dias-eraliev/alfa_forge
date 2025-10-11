@@ -128,4 +128,13 @@ export class SelectedHabitsDto {
   @ArrayNotEmpty({ message: 'habitIds не должен быть пустым' })
   @ArrayUnique({ message: 'habitIds содержит дублирующиеся значения' })
   habitIds: string[];
+
+  @ApiProperty({
+    description: 'Опциональный подробный список выбранных привычек',
+    required: false,
+    type: 'array',
+  })
+  @IsOptional()
+  @IsArray()
+  habits?: Array<{ id: string; name: string; description?: string; sphereId?: string }>;
 }

@@ -43,7 +43,7 @@ class MLKitPoseBackend implements PoseBackend {
     final start = DateTime.now();
     
     if (!_initialized || _detector == null) {
-      return PoseBackendResult(
+      return const PoseBackendResult(
         frame: null,
         latency: Duration.zero,
         error: 'MLKit detector not initialized',

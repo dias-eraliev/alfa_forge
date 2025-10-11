@@ -226,8 +226,34 @@ class OnboardingController extends ChangeNotifier {
       if (_data.selectedHabits.isNotEmpty) {
         try {
           final habitIds = _data.selectedHabits.map((h) => h.id).toList();
+          // Попробуем передать и расширенный формат с названием/сферой, чтобы бэкенд мог создать реальные привычки
+          // Определим сферу по доступным сферам (если выбран режим выбора привычек)
+          String? guessSphereIdForHabit(String habitId) {
+            for (final s in _selectedSpheres) {
+              if (s.habits.any((h) => h.id == habitId)) {
+                return s.id;
+              }
+            }
+            return null;
+          }
+          final List<Map<String, dynamic>> rich = _data.selectedHabits.map((h) {
+            final map = <String, dynamic>{
+              'id': h.id,
+              'name': h.name,
+            };
+            if (h.description.isNotEmpty) {
+              map['description'] = h.description;
+            }
+            final s = guessSphereIdForHabit(h.id);
+            if (s != null) {
+              map['sphereId'] = s;
+            }
+            return map;
+          }).toList();
+
           final habitsResp = await onboardingService.updateSelectedHabits(
             habitIds: habitIds,
+            habits: rich,
           );
           if (!habitsResp.isSuccess) {
             debugPrint('⚠️ Failed to save selected habits: ${habitsResp.error}');

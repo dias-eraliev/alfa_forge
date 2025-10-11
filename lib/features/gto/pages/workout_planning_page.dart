@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import '../../../app/theme.dart';
 import '../models/exercise_model.dart';
 import '../controllers/workout_controller.dart';
-import 'ai_motion_page.dart';
 
 class WorkoutPlanningPage extends ConsumerStatefulWidget {
   const WorkoutPlanningPage({super.key});

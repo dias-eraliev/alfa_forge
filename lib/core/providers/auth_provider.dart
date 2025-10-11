@@ -143,7 +143,7 @@ class AuthProvider extends ChangeNotifier {
         await PushService.registerIfPossible();
         try {
           final sub = OneSignal.User.pushSubscription;
-          debugPrint('🔔 After login: optedIn=' + sub.optedIn.toString() + ', id=' + (sub.id ?? 'null'));
+          debugPrint('🔔 After login: optedIn=${sub.optedIn}, id=${sub.id ?? 'null'}');
         } catch (_) {}
         return true;
       } else {

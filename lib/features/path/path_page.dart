@@ -135,7 +135,7 @@ class _PathPageState extends ConsumerState<PathPage> with TickerProviderStateMix
       ),
       child: Row(
         children: [
-          Icon(Icons.warning_amber, color: PRIMETheme.warn),
+          const Icon(Icons.warning_amber, color: PRIMETheme.warn),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -317,7 +317,7 @@ class _PathPageState extends ConsumerState<PathPage> with TickerProviderStateMix
           LinearProgressIndicator(
             value: totalProgress,
             backgroundColor: PRIMETheme.line,
-            valueColor: AlwaysStoppedAnimation<Color>(PRIMETheme.primary),
+            valueColor: const AlwaysStoppedAnimation<Color>(PRIMETheme.primary),
             minHeight: 6,
           ),
           const SizedBox(height: 12),
@@ -456,7 +456,7 @@ class _PathPageState extends ConsumerState<PathPage> with TickerProviderStateMix
                     ],
                   ),
                 );
-              }).toList(),
+              }),
             ],
           ),
         );
@@ -647,7 +647,7 @@ class _PathPageState extends ConsumerState<PathPage> with TickerProviderStateMix
       ),
       child: Row(
         children: [
-          Icon(Icons.error_outline, color: PRIMETheme.warn),
+          const Icon(Icons.error_outline, color: PRIMETheme.warn),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -1290,7 +1290,7 @@ class _PathPageState extends ConsumerState<PathPage> with TickerProviderStateMix
             LinearProgressIndicator(
               value: (userMetrics['streak'] ?? 0) / 30.0,
               backgroundColor: PRIMETheme.line,
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+              valueColor: const AlwaysStoppedAnimation<Color>(Colors.orange),
             ),
           ],
         ),
@@ -1330,7 +1330,7 @@ class _PathPageState extends ConsumerState<PathPage> with TickerProviderStateMix
             LinearProgressIndicator(
               value: progress.clamp(0.0, 1.0),
               backgroundColor: PRIMETheme.line,
-              valueColor: AlwaysStoppedAnimation<Color>(PRIMETheme.primary),
+              valueColor: const AlwaysStoppedAnimation<Color>(PRIMETheme.primary),
             ),
           ],
         ),
@@ -1437,7 +1437,7 @@ class _PathPageState extends ConsumerState<PathPage> with TickerProviderStateMix
             LinearProgressIndicator(
               value: totalProgress.isNaN ? 0.0 : totalProgress.clamp(0.0, 1.0),
               backgroundColor: PRIMETheme.line,
-              valueColor: AlwaysStoppedAnimation<Color>(PRIMETheme.primary),
+              valueColor: const AlwaysStoppedAnimation<Color>(PRIMETheme.primary),
             ),
           ],
         ),

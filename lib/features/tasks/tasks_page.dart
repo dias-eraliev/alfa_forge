@@ -89,9 +89,9 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
+          content: const Text(
             'Используются локальные данные. API недоступен.',
-            style: const TextStyle(color: PRIMETheme.sand),
+            style: TextStyle(color: PRIMETheme.sand),
           ),
           backgroundColor: PRIMETheme.warn,
           duration: const Duration(seconds: 3),
@@ -342,7 +342,7 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
                   habitName: task.habitName,
                   reminderAt: task.reminderAt,
                   isRecurring: task.isRecurring ? true : null,
-                  recurringType: task.recurringType != null ? task.recurringType!.name.toUpperCase() : null,
+                  recurringType: task.recurringType?.name.toUpperCase(),
                   subtasks: task.subtasks.isNotEmpty ? task.subtasks : null,
                   tags: task.tags.isNotEmpty ? task.tags : null,
                 );
@@ -677,7 +677,7 @@ class _TasksPageState extends State<TasksPage> with TickerProviderStateMixin {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Проблема с API: ${_errorMessage}',
+                          'Проблема с API: $_errorMessage',
                           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                 color: PRIMETheme.warn,
                           ),

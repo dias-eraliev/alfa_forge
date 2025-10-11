@@ -175,7 +175,7 @@ class HabitConverter {
         c.date.isBefore(now.add(const Duration(days: 1)))
     ).length;
     
-    final maxPossible = 30; // За 30 дней максимум 30 выполнений
+    const maxPossible = 30; // За 30 дней максимум 30 выполнений
     return ((recentCompletions / maxPossible) * 100).round().clamp(0, 100);
   }
 

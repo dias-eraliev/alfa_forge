@@ -546,7 +546,7 @@ class _AdvancedAddTaskDialogState extends State<AdvancedAddTaskDialog>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.flash_on,
                       size: 16,
                       color: PRIMETheme.primary,
@@ -678,7 +678,7 @@ class _AdvancedAddTaskDialogState extends State<AdvancedAddTaskDialog>
                       value: habit.id,
                       child: Text(habit.name),
                     );
-                  }).toList(),
+                  }),
                 ],
                 onChanged: (value) {
                   setState(() {
@@ -734,7 +734,7 @@ class _AdvancedAddTaskDialogState extends State<AdvancedAddTaskDialog>
                   }
                 });
               },
-              activeColor: PRIMETheme.primary,
+              activeThumbColor: PRIMETheme.primary,
             ),
           ],
         ),
@@ -894,7 +894,7 @@ class _AdvancedAddTaskDialogState extends State<AdvancedAddTaskDialog>
                   }
                 });
               },
-              activeColor: PRIMETheme.primary,
+              activeThumbColor: PRIMETheme.primary,
             ),
           ],
         ),

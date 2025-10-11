@@ -241,7 +241,7 @@ class _BrotherhoodPageState extends State<BrotherhoodPage> with TickerProviderSt
                       },
                     ),
                   );
-                }).toList(),
+                }),
               ],
             ),
           ),
@@ -668,7 +668,7 @@ class _BrotherhoodPageState extends State<BrotherhoodPage> with TickerProviderSt
                 if (replyTo == null) ...[
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: selectedTopic,
+                    initialValue: selectedTopic,
                     isExpanded: true,
                     decoration: InputDecoration(
                       labelText: 'Тема (опционально)',
