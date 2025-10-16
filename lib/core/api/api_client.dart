@@ -3,7 +3,8 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiClient {
-  static const String baseUrl = 'https://alfa-backend.abai.live'; // Измените на ваш URL
+  static const String baseUrl =
+      'https://alfa-backend.abai.live/api'; // Измените на ваш URL
   static ApiClient? _instance;
   late http.Client _client;
   String? _accessToken;
@@ -26,8 +27,10 @@ class ApiClient {
     final prefs = await SharedPreferences.getInstance();
     _accessToken = prefs.getString('access_token');
     _refreshToken = prefs.getString('refresh_token');
-    
-    print('🎫 Access token: ${_accessToken != null ? "EXISTS (${_accessToken!.substring(0, 20)}...)" : "NULL"}');
+
+    print(
+      '🎫 Access token: ${_accessToken != null ? "EXISTS (${_accessToken!.substring(0, 20)}...)" : "NULL"}',
+    );
     print('🎫 Refresh token: ${_refreshToken != null ? "EXISTS" : "NULL"}');
     print('🎫 isAuthenticated: $isAuthenticated');
     print('🎫🎫🎫 ApiClient INITIALIZE END 🎫🎫🎫');
@@ -37,7 +40,7 @@ class ApiClient {
   Future<void> saveTokens(String accessToken, String refreshToken) async {
     _accessToken = accessToken;
     _refreshToken = refreshToken;
-    
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('access_token', accessToken);
     await prefs.setString('refresh_token', refreshToken);
@@ -47,7 +50,7 @@ class ApiClient {
   Future<void> clearTokens() async {
     _accessToken = null;
     _refreshToken = null;
-    
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('access_token');
     await prefs.remove('refresh_token');
@@ -65,11 +68,11 @@ class ApiClient {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     };
-    
+
     if (_accessToken != null) {
       headers['Authorization'] = 'Bearer $_accessToken';
     }
-    
+
     return headers;
   }
 
@@ -112,7 +115,7 @@ class ApiClient {
           uri,
           headers: _headers,
           body: body != null ? jsonEncode(body) : null,
-        ),  
+        ),
       );
     } catch (e) {
       return ApiResponse.error('Ошибка сети: $e');
@@ -208,9 +211,9 @@ class ApiClient {
     bool didRetry = false,
   }) async {
     final statusCode = response.statusCode;
-    
+
     // Попытка обновить токен при ошибке 401
-  if (statusCode == 401 && _refreshToken != null && !didRetry) {
+    if (statusCode == 401 && _refreshToken != null && !didRetry) {
       final refreshed = await _refreshAccessToken();
       if (refreshed && retryRequest != null) {
         final newResponse = await retryRequest();
@@ -228,7 +231,9 @@ class ApiClient {
         await clearTokens();
       } catch (_) {}
       // Вызовем колбэк асинхронно, чтобы не ломать текущий стек
-      Future.microtask(() { onUnauthorized?.call(); });
+      Future.microtask(() {
+        onUnauthorized?.call();
+      });
     }
 
     try {
@@ -241,7 +246,8 @@ class ApiClient {
       if (statusCode >= 200 && statusCode < 300) {
         if (fromJson != null) {
           // Если сервер вернул массив, оборачиваем его в Map под ключом 'data'
-          final Map<String, dynamic> normalized = decoded is Map<String, dynamic>
+          final Map<String, dynamic> normalized =
+              decoded is Map<String, dynamic>
               ? decoded
               : <String, dynamic>{'data': decoded};
           print('🚀 Calling fromJson with (normalized): $normalized');
@@ -258,7 +264,9 @@ class ApiClient {
             : 'Неизвестная ошибка';
         // Дополнительно продублируем вызов onUnauthorized для явного 401 (если ещё не вызывался выше)
         if (statusCode == 401) {
-          Future.microtask(() { onUnauthorized?.call(); });
+          Future.microtask(() {
+            onUnauthorized?.call();
+          });
         }
         return ApiResponse.error(message);
       }
@@ -276,26 +284,26 @@ class ApiClient {
   // Обновление access token
   Future<bool> _refreshAccessToken() async {
     if (_refreshToken == null) return false;
-    
+
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/auth/refresh'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'refreshToken': _refreshToken}),
       );
-      
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final newAccessToken = data['accessToken'] as String;
         final newRefreshToken = data['refreshToken'] as String?;
-        
+
         await saveTokens(newAccessToken, newRefreshToken ?? _refreshToken!);
         return true;
       }
     } catch (e) {
       // Ошибка обновления токена
     }
-    
+
     return false;
   }
 
@@ -326,11 +334,7 @@ class ApiResponse<T> {
   final String? error;
   final bool isSuccess;
 
-  ApiResponse.success(this.data)
-      : error = null,
-        isSuccess = true;
+  ApiResponse.success(this.data) : error = null, isSuccess = true;
 
-  ApiResponse.error(this.error)
-      : data = null,
-        isSuccess = false;
+  ApiResponse.error(this.error) : data = null, isSuccess = false;
 }
