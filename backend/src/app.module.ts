@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -20,6 +22,13 @@ import { AppSchedulerModule } from './scheduler/scheduler.module';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+    }),
+    // Раздача статического Flutter web билда (исключая /api*)
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', '..', '..', 'build', 'web'),
+      serveRoot: '/',
+      exclude: ['/api', '/api/:rest*'],
+      serveStaticOptions: { index: 'index.html' },
     }),
     PrismaModule,
     AuthModule,

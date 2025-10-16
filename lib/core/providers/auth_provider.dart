@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 import '../web/onesignal_bridge.dart';
 import '../services/push_service.dart';
+import '../../app/router.dart';
 
 enum AuthState {
   initial,
@@ -23,6 +24,7 @@ class AuthProvider extends ChangeNotifier {
   ApiUser? _user;
   String? _errorMessage;
   bool _isLoading = false;
+  bool _logoutInProgress = false;
 
   // Getters
   AuthState get state => _state;
@@ -37,10 +39,36 @@ class AuthProvider extends ChangeNotifier {
     _setState(AuthState.loading);
     
     try {
+      // Подписка на глобальную 401-обработку
+      ApiClient.onUnauthorized = () async {
+        // Гарантируем одиночный выход при серии 401, не блокируемся на _isLoading
+        if (_logoutInProgress || _state == AuthState.unauthenticated) {
+          debugPrint('🔐 Global 401: logout already in progress or unauthenticated, skipping');
+          return;
+        }
+        _logoutInProgress = true;
+        try {
+          debugPrint('🔐 Global 401: performing logout and redirect');
+          await logout();
+        } catch (e) {
+          debugPrint('🔐 Global 401: logout error: $e');
+        } finally {
+          _logoutInProgress = false;
+        }
+      };
+
       // Проверяем, есть ли сохраненные токены
-      final isAuth = _authService.isAuthenticated;
+      var isAuth = _authService.isAuthenticated;
       print('👤 AuthService isAuthenticated: $isAuth');
-      
+
+      // Если access отсутствует, но есть refresh — попробуем тихо обновить
+      if (!isAuth && ApiClient.instance.hasRefreshToken) {
+        print('👤 No access token, trying silent refresh...');
+        final refreshed = await ApiClient.instance.tryRefresh();
+        isAuth = refreshed || _authService.isAuthenticated;
+        print('👤 Silent refresh result: refreshed=$refreshed, isAuthenticated=$isAuth');
+      }
+
       if (isAuth) {
         print('👤 Loading current user...');
         await _loadCurrentUser();
@@ -173,6 +201,10 @@ class AuthProvider extends ChangeNotifier {
       _user = null;
       _setState(AuthState.unauthenticated);
       _setLoading(false);
+      // Явно уводим на публичный экран, чтобы пользователь увидел форму входа/интро
+      try {
+        router.go('/intro');
+      } catch (_) {}
     }
   }
 

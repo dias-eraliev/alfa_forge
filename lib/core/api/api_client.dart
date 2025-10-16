@@ -8,6 +8,8 @@ class ApiClient {
   late http.Client _client;
   String? _accessToken;
   String? _refreshToken;
+  // Глобальный колбэк на 401 (например, для авто-логаута/редиректа)
+  static void Function()? onUnauthorized;
 
   ApiClient._internal() {
     _client = http.Client();
@@ -53,6 +55,9 @@ class ApiClient {
 
   // Проверка авторизации
   bool get isAuthenticated => _accessToken != null;
+
+  // Доступность refresh токена
+  bool get hasRefreshToken => _refreshToken != null;
 
   // Заголовки для запросов
   Map<String, String> get _headers {
@@ -217,6 +222,13 @@ class ApiClient {
           didRetry: true,
         );
       }
+      // Не удалось обновить токен — уведомим слушателя об истёкшей сессии
+      // и очистим локальные токены
+      try {
+        await clearTokens();
+      } catch (_) {}
+      // Вызовем колбэк асинхронно, чтобы не ломать текущий стек
+      Future.microtask(() { onUnauthorized?.call(); });
     }
 
     try {
@@ -244,6 +256,10 @@ class ApiClient {
         final message = (decoded is Map<String, dynamic>)
             ? (decoded['message'] ?? 'Неизвестная ошибка')
             : 'Неизвестная ошибка';
+        // Дополнительно продублируем вызов onUnauthorized для явного 401 (если ещё не вызывался выше)
+        if (statusCode == 401) {
+          Future.microtask(() { onUnauthorized?.call(); });
+        }
         return ApiResponse.error(message);
       }
     } catch (e, stackTrace) {
@@ -281,6 +297,22 @@ class ApiClient {
     }
     
     return false;
+  }
+
+  // Публичная обёртка для тихого обновления токена (если есть refresh)
+  Future<bool> tryRefresh() async {
+    try {
+      final ok = await _refreshAccessToken();
+      if (ok) {
+        print('🔐 Access token refreshed via tryRefresh()');
+      } else {
+        print('🔐 tryRefresh() failed or no refresh token');
+      }
+      return ok;
+    } catch (e) {
+      print('🔐 tryRefresh() error: $e');
+      return false;
+    }
   }
 
   void dispose() {

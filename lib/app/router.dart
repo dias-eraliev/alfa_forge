@@ -29,12 +29,25 @@ final router = GoRouter(
     print('📍 Current path: $currentPath');
     
     // Проверяем авторизацию
-    final isAuthenticated = authService.isAuthenticated;
+    var isAuthenticated = authService.isAuthenticated;
     print('🔐 Is authenticated: $isAuthenticated');
     
     // Проверяем токены в ApiClient
     final apiClient = ApiClient.instance;
     print('🎫 ApiClient isAuthenticated: ${apiClient.isAuthenticated}');
+    print('🎫 ApiClient hasRefreshToken: ${apiClient.hasRefreshToken}');
+
+    // Если access отсутствует, но есть refresh — попробуем тихо обновить токен прямо в редиректе
+    if (!isAuthenticated && apiClient.hasRefreshToken) {
+      print('🔄 Trying silent refresh inside router.redirect...');
+      final refreshed = await apiClient.tryRefresh();
+      print('🔄 Silent refresh result: $refreshed');
+      if (refreshed) {
+        // После успешного refresh авторизация должна появиться
+        isAuthenticated = authService.isAuthenticated || apiClient.isAuthenticated;
+        print('🔐 Is authenticated after refresh: $isAuthenticated');
+      }
+    }
     
     // Если пользователь НЕ авторизован
     if (!isAuthenticated) {
