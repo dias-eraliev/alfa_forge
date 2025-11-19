@@ -16,6 +16,7 @@ import { ProgressModule } from './progress/progress.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { BrotherhoodModule } from './brotherhood/brotherhood.module';
 import { AppSchedulerModule } from './scheduler/scheduler.module';
+import { StaticModule } from './static/static.module';
 
 @Module({
   imports: [
@@ -23,14 +24,14 @@ import { AppSchedulerModule } from './scheduler/scheduler.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
-    // Раздача статического Flutter web билда (исключая /api*)
+    // Раздача статического Flutter web билда
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', '..', '..', 'build', 'web'),
       serveRoot: '/',
-      exclude: ['/api', '/api/:rest*'],
       serveStaticOptions: { index: 'index.html' },
     }),
     PrismaModule,
+    StaticModule,
     AuthModule,
     UsersModule,
     DashboardModule,
