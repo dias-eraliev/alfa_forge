@@ -1,4 +1,6 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    
     <!-- Разрешения для камеры и интернета -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.INTERNET" />
@@ -15,7 +17,12 @@
     <application
         android:label="PRIME_forge"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowNativeHeapPointerTagging="false">
+        
+        <!-- Явная поддержка 16KB страниц памяти -->
+        <uses-native-library android:name="libflutter.so" android:required="false" />
+        
         <!-- Required by Google Play services / OneSignal to verify GMS version -->
         <meta-data
             android:name="com.google.android.gms.version"

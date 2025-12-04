@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+4
+version: 1.0.0+8
 
 environment:
   sdk: ^3.8.1
@@ -52,7 +52,7 @@ dependencies:
   model_viewer_plus: ^1.7.2
   
   # =============== ПРЕМИУМ АНИМАЦИИ ===============
-  rive: ^0.12.4
+  # rive: ^0.12.4 # Removed due to build issues with non-ASCII path
   lottie: ^3.1.2
   flutter_animate: ^4.5.0
   flutter_staggered_animations: ^1.1.1
@@ -73,7 +73,7 @@ dependencies:
   camera: ^0.10.6
   wakelock_plus: ^1.2.5
   permission_handler: ^11.3.1
-  google_ml_kit: ^0.18.0
+  # google_ml_kit: ^0.18.0  # Отключено из-за несовместимости с 16KB страницами памяти
   
   # =============== ПРОИЗВОДИТЕЛЬНОСТЬ ===============
   flutter_hooks: ^0.20.5
@@ -119,10 +119,7 @@ flutter:
   
   # Добавим ассеты для 3D моделей и анимаций
   assets:
-    - assets/animations/
     - assets/models/
-    - assets/sounds/
-    - assets/images/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

@@ -707,6 +707,8 @@ class _PathPageState extends ConsumerState<PathPage> with TickerProviderStateMix
   Widget _buildActionButtons(BuildContext context, bool isSmallScreen) {
     return Column(
       children: [
+        // ГТО кнопка временно отключена из-за несовместимости ML Kit с 16KB страницами памяти
+        /*
         SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
@@ -732,6 +734,7 @@ class _PathPageState extends ConsumerState<PathPage> with TickerProviderStateMix
           ),
         ),
         const SizedBox(height: 12),
+        */
         Row(
           children: [
             Expanded(

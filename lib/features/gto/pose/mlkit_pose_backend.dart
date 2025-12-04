@@ -1,15 +1,17 @@
 // MLKit-based pose backend для реального определения поз
+// ОТКЛЮЧЕНО: Несовместимость с 16KB страницами памяти
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
-import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
+// import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart'; // Отключено
 import 'pose_models.dart';
 import 'pose_backend.dart';
 
-/// MLKit реализация для реального определения поз через Google ML Kit
+/// MLKit реализация - ОТКЛЮЧЕНА из-за несовместимости с 16KB
+/// Используйте MediaPipePoseBackendStub вместо этого
 class MLKitPoseBackend implements PoseBackend {
-  PoseDetector? _detector;
+  // PoseDetector? _detector;
   bool _initialized = false;
   late PoseBackendInitOptions _options;
 
@@ -18,6 +20,10 @@ class MLKitPoseBackend implements PoseBackend {
 
   @override
   Future<void> initialize(PoseBackendInitOptions options) async {
+    _initialized = true; // Заглушка
+    _options = options;
+    /* Закомментировано
+```
     if (_initialized) return;
     
     _options = options;

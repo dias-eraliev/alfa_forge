@@ -7,9 +7,28 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:47527057565:android:164800baddd1ac36de1c74",
+        "android_client_info": {
+          "package_name": "com.abai.alfa_forge"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBQ4AaqNvYqI3XyBZBWBRf552nQk7uzVc4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:47527057565:android:50f2edfbfffec2bfde1c74",
         "android_client_info": {
-          "package_name": "com.example.alfa_forge"
+          "package_name": "com.example.PRIME_forge"
         }
       },
       "oauth_client": [],

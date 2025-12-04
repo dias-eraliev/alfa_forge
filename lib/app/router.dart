@@ -9,8 +9,7 @@ import '../features/habits/habits_page.dart';
 import '../features/tasks/tasks_page.dart';
 import '../features/brotherhood/brotherhood_page.dart';
 import '../features/body/body_page.dart';
-import '../features/gto/gto_page.dart';
-import '../features/gto/pages/ai_motion_page.dart';
+// GTO features removed due to 16KB page size compatibility
 import '../features/onboarding/pages/intro_page.dart';
 import '../features/onboarding/pages/profile_page.dart';
 import '../features/onboarding/pages/name_page.dart';
@@ -152,10 +151,7 @@ final router = GoRouter(
     GoRoute(path: '/tasks', builder: (c, s) => const TasksPage()),
     GoRoute(path: '/brotherhood', builder: (c, s) => const BrotherhoodPage()),
     
-    // GTO routes
-    GoRoute(path: '/gto', builder: (c, s) => const GTOPage()),
-    GoRoute(path: '/gto/ai-motion', builder: (c, s) => const AIMotionPage()),
-    GoRoute(path: '/gto/workout', builder: (c, s) => const AIMotionPage()),
+    // GTO routes removed - incompatible with 16KB page size
     
     // Finance route (temporarily disabled module)
     GoRoute(

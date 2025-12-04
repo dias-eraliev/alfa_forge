@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -14,9 +16,17 @@ configurations.configureEach {
     // Keep firebase-iid-interop, it's needed by firebase-messaging at runtime
 }
 
+// Load keystore properties
+val keystorePropertiesFile = rootProject.file("key.properties")
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+}
+
 android {
-    namespace = "com.example.alfa_forge"
+    namespace = "com.abai.alfa_forge"
     compileSdk = 36
+    buildToolsVersion = "34.0.0"
     ndkVersion = "27.0.12077973"
 
     compileOptions {
@@ -31,29 +41,44 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.alfa_forge"
+        applicationId = "com.abai.alfa_forge"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        
+        // Поддержка страниц памяти размером 16 КБ (для Android 15+)
+        ndk {
+            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
+        }
+    }
+
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties.getProperty("keyAlias")
+            keyPassword = keystoreProperties.getProperty("keyPassword")
+            storeFile = file(keystoreProperties.getProperty("storeFile") ?: "upload-keystore.jks")
+            storePassword = keystoreProperties.getProperty("storePassword")
+        }
     }
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false // Отключаем для совместимости с MediaPipe
             isShrinkResources = false
         }
     }
 
-    // Packaging options to avoid license duplicate conflicts (MediaPipe + others)
+    // Packaging options to avoid license duplicate conflicts
     packagingOptions {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        jniLibs {
+            useLegacyPackaging = false
         }
     }
 }
@@ -64,7 +89,7 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
-
-    // MediaPipe Tasks Vision (Pose Landmarker) - последняя стабильная версия
-    implementation("com.google.mediapipe:tasks-vision:0.10.14")
+    
+    // MediaPipe временно отключен из-за несовместимости с 16KB страницами памяти
+    // Используем только встроенные ML Kit модули Flutter
 }

@@ -20,7 +20,7 @@ void main() async {
   print('🚀 ApiClient initialized');
 
   // Инициализация OneSignal (опционально: установите ONESIGNAL_APP_ID в константе или .env)
-  const oneSignalAppId = String.fromEnvironment('ONESIGNAL_APP_ID', defaultValue: '');
+  const oneSignalAppId = String.fromEnvironment('90de8ffd-3f5d-45f5-89c4-ebb8e08c3c48', defaultValue: '');
   print('🔔 OneSignal init path...');
   if (kIsWeb) {
     try {

@@ -1,16 +1,16 @@
 import 'dart:math' as math;
 import 'package:flutter/services.dart';
-import 'package:google_ml_kit/google_ml_kit.dart';
+// import 'package:google_ml_kit/google_ml_kit.dart'; // Отключено из-за несовместимости с 16KB
 import 'package:camera/camera.dart';
 import 'exercise_model.dart';
 
 class RealAIDetector {
-  static final PoseDetector _poseDetector = PoseDetector(
-    options: PoseDetectorOptions(
-      mode: PoseDetectionMode.stream,
-      model: PoseDetectionModel.accurate,
-    ),
-  );
+  // static final PoseDetector _poseDetector = PoseDetector(
+  //   options: PoseDetectorOptions(
+  //     mode: PoseDetectionMode.stream,
+  //     model: PoseDetectionModel.accurate,
+  //   ),
+  // );
 
   static bool _isDisposed = false;
 
@@ -20,6 +20,18 @@ class RealAIDetector {
     String exerciseType,
     int currentCount,
   ) async {
+    // ML Kit отключен из-за несовместимости с 16KB страницами памяти
+    // Возвращаем заглушку
+    return AIDetectionResult(
+      isGoodForm: false,
+      isAverageForm: false,
+      qualityPercentage: 0,
+      feedback: 'AI детекция временно недоступна',
+      phase: 'disabled',
+      repetitionCount: currentCount,
+    );
+    
+    /* Закомментировано - требует google_ml_kit
     if (_isDisposed) {
       return AIDetectionResult(
         isGoodForm: false,
